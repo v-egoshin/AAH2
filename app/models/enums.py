@@ -1,0 +1,96 @@
+from enum import StrEnum
+
+
+class AssessmentStatus(StrEnum):
+    DRAFT = "DRAFT"
+    ACTIVE = "ACTIVE"
+    PAUSED = "PAUSED"
+    COMPLETED = "COMPLETED"
+    ARCHIVED = "ARCHIVED"
+
+
+class AssetType(StrEnum):
+    REPOSITORY = "REPOSITORY"
+    URL = "URL"
+    URL_GROUP = "URL_GROUP"
+    DOMAIN = "DOMAIN"
+    SERVICE = "SERVICE"
+    API_SPEC = "API_SPEC"
+    BLACKBOX_TARGET = "BLACKBOX_TARGET"
+    BINARY = "BINARY"
+    CONTAINER_IMAGE = "CONTAINER_IMAGE"
+    DOCUMENT = "DOCUMENT"
+    OTHER = "OTHER"
+
+
+class SourceType(StrEnum):
+    JOERN = "JOERN"
+    SEMGREP = "SEMGREP"
+    CODEQL = "CODEQL"
+    LLM = "LLM"
+    OPENAPI = "OPENAPI"
+    BLACKBOX = "BLACKBOX"
+    MANUAL_JSON = "MANUAL_JSON"
+    CUSTOM_TOOL = "CUSTOM_TOOL"
+    LEGACY_IMPORT = "LEGACY_IMPORT"
+    OTHER = "OTHER"
+
+
+class ImportStatus(StrEnum):
+    PENDING = "PENDING"
+    IMPORTED = "IMPORTED"
+    PARTIALLY_IMPORTED = "PARTIALLY_IMPORTED"
+    FAILED = "FAILED"
+    CANCELLED = "CANCELLED"
+
+
+class CandidateType(StrEnum):
+    OBJECT = "OBJECT"
+    MARK = "MARK"
+    RELATION = "RELATION"
+    CHECK = "CHECK"
+    CASE = "CASE"
+    EVIDENCE = "EVIDENCE"
+    FINDING_DRAFT = "FINDING_DRAFT"
+
+
+class CandidateStatus(StrEnum):
+    NEW = "NEW"
+    ACCEPTED = "ACCEPTED"
+    REJECTED = "REJECTED"
+    DUPLICATE = "DUPLICATE"
+    NEEDS_REVIEW = "NEEDS_REVIEW"
+    ERROR = "ERROR"
+
+
+class Confidence(StrEnum):
+    LOW = "LOW"
+    MEDIUM = "MEDIUM"
+    HIGH = "HIGH"
+    UNKNOWN = "UNKNOWN"
+
+
+class MarkKind(StrEnum):
+    SOURCE = "SOURCE"
+    SINK = "SINK"
+    GUARD = "GUARD"
+    TRANSFORM = "TRANSFORM"
+    NOTE = "NOTE"
+
+
+class MarkStatus(StrEnum):
+    ACTIVE = "ACTIVE"
+    NEEDS_REVIEW = "NEEDS_REVIEW"
+    DISMISSED = "DISMISSED"
+    CONFIRMED = "CONFIRMED"
+
+
+class CheckStatus(StrEnum):
+    NOT_STARTED = "NOT_STARTED"
+    IN_PROGRESS = "IN_PROGRESS"
+    NEEDS_REVIEW = "NEEDS_REVIEW"
+    CHECKED_OK = "CHECKED_OK"
+    CHECKED_WEAK = "CHECKED_WEAK"
+    FAILED = "FAILED"
+    NOT_APPLICABLE = "NOT_APPLICABLE"
+    BLOCKED = "BLOCKED"
