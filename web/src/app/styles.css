@@ -1,0 +1,17 @@
+:root { font-family: Inter, system-ui, sans-serif; color: #0f172a; background: #f8fafc; }
+* { box-sizing: border-box; }
+body { margin: 0; }
+.app-shell { display: grid; grid-template-columns: 240px 1fr; min-height: 100vh; }
+.sidebar { background: #0f172a; color: #e2e8f0; padding: 20px; }
+.sidebar h2 { margin: 0 0 16px; font-size: 16px; }
+.sidebar a { display: block; color: #cbd5e1; text-decoration: none; padding: 8px 10px; border-radius: 8px; margin-bottom: 6px; }
+.sidebar a.active, .sidebar a:hover { background: #1e293b; color: #fff; }
+.content { padding: 24px; }
+.card { background: #fff; border: 1px solid #e2e8f0; border-radius: 14px; padding: 16px; box-shadow: 0 4px 16px rgba(15,23,42,.04); }
+.grid { display: grid; gap: 12px; grid-template-columns: repeat(3, minmax(0,1fr)); }
+.metric { font-size: 24px; font-weight: 700; }
+.table { width: 100%; border-collapse: collapse; }
+.table th, .table td { padding: 10px; border-bottom: 1px solid #e2e8f0; text-align: left; }
+.badge { padding: 2px 8px; border-radius: 999px; font-size: 12px; background: #e2e8f0; }
+.btn { background: #2563eb; color: white; border: 0; border-radius: 8px; padding: 8px 10px; cursor: pointer; }
+.small { color: #64748b; font-size: 13px; }

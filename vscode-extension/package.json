@@ -1,0 +1,42 @@
+{
+  "name": "appsec-workbench",
+  "displayName": "AppSec Workbench",
+  "version": "0.1.0",
+  "engines": { "vscode": "^1.90.0" },
+  "main": "./dist/extension.js",
+  "activationEvents": [
+    "onCommand:appsecWorkbench.refreshContext",
+    "onCommand:appsecWorkbench.markSource",
+    "onCommand:appsecWorkbench.markSink",
+    "onCommand:appsecWorkbench.markGuard",
+    "onCommand:appsecWorkbench.markTransform",
+    "onCommand:appsecWorkbench.acceptCandidate"
+  ],
+  "contributes": {
+    "views": { "explorer": [{ "id": "appsecContext", "name": "AppSec Context" }] },
+    "configuration": {
+      "title": "AppSec Workbench",
+      "properties": {
+        "appsecWorkbench.apiBaseUrl": { "type": "string", "default": "http://localhost:8000/api" },
+        "appsecWorkbench.assessmentId": { "type": "string", "default": "" },
+        "appsecWorkbench.assetId": { "type": "string", "default": "" },
+        "appsecWorkbench.authToken": { "type": "string", "default": "" }
+      }
+    },
+    "commands": [
+      {"command":"appsecWorkbench.refreshContext","title":"AppSec: Refresh Context"},
+      {"command":"appsecWorkbench.markSource","title":"AppSec: Mark as Source"},
+      {"command":"appsecWorkbench.markSink","title":"AppSec: Mark as Sink"},
+      {"command":"appsecWorkbench.markGuard","title":"AppSec: Mark as Guard"},
+      {"command":"appsecWorkbench.markTransform","title":"AppSec: Mark as Transform"},
+      {"command":"appsecWorkbench.acceptCandidate","title":"AppSec: Accept Candidate"}
+    ]
+  },
+  "scripts": {
+    "build": "tsc -p ."
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.90.0",
+    "typescript": "^5.7.2"
+  }
+}
