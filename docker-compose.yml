@@ -3,6 +3,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.backend
+      network: host
     ports:
       - "8000:8000"
 
@@ -10,6 +11,7 @@ services:
     build:
       context: .
       dockerfile: web/Dockerfile
+      network: host
     ports:
       - "5173:5173"
     depends_on:
