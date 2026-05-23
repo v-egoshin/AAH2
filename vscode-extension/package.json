@@ -2,38 +2,183 @@
   "name": "appsec-workbench",
   "displayName": "AppSec Workbench",
   "version": "0.1.0",
-  "engines": { "vscode": "^1.90.0" },
+  "engines": {
+    "vscode": "^1.90.0"
+  },
   "main": "./dist/extension.js",
   "activationEvents": [
+    "*",
+    "onStartupFinished",
+    "onView:appsecContext",
     "onCommand:appsecWorkbench.refreshContext",
+    "onCommand:appsecWorkbench.createAssessment",
+    "onCommand:appsecWorkbench.setRecentMarkFilter",
+    "onCommand:appsecWorkbench.clearRecentMarkFilter",
+    "onCommand:appsecWorkbench.showSelectionActions",
     "onCommand:appsecWorkbench.markSource",
     "onCommand:appsecWorkbench.markSink",
     "onCommand:appsecWorkbench.markGuard",
     "onCommand:appsecWorkbench.markTransform",
-    "onCommand:appsecWorkbench.acceptCandidate"
+    "onCommand:appsecWorkbench.createCheckFromSelection",
+    "onCommand:appsecWorkbench.attachEvidenceFromSelection",
+    "onCommand:appsecWorkbench.createCaseFromContext",
+    "onCommand:appsecWorkbench.removeCurrentMark",
+    "onCommand:appsecWorkbench.showRecentMarkActions",
+    "onCommand:appsecWorkbench.setCheckStatus",
+    "onCommand:appsecWorkbench.convertCheckToFinding",
+    "onCommand:appsecWorkbench.dismissFollowUp",
+    "onCommand:appsecWorkbench.openEntitySource",
+    "onCommand:appsecWorkbench.acceptCandidate",
+    "onCommand:appsecWorkbench.rejectCandidate"
   ],
   "contributes": {
-    "views": { "explorer": [{ "id": "appsecContext", "name": "AppSec Context" }] },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "appsecWorkbench",
+          "title": "AppSec",
+          "icon": "media/source.svg"
+        }
+      ]
+    },
+    "views": {
+      "appsecWorkbench": [
+        {
+          "id": "appsecContext",
+          "name": "AppSec Context",
+          "type": "webview"
+        }
+      ]
+    },
     "configuration": {
       "title": "AppSec Workbench",
       "properties": {
-        "appsecWorkbench.apiBaseUrl": { "type": "string", "default": "http://localhost:8000/api" },
-        "appsecWorkbench.assessmentId": { "type": "string", "default": "" },
-        "appsecWorkbench.assetId": { "type": "string", "default": "" },
-        "appsecWorkbench.authToken": { "type": "string", "default": "" }
+        "appsecWorkbench.apiBaseUrl": {
+          "type": "string",
+          "default": "http://localhost:8000/api"
+        },
+        "appsecWorkbench.assessmentId": {
+          "type": "string",
+          "default": "",
+          "description": "Assessment selector. You can enter either the assessment name or its UUID."
+        },
+        "appsecWorkbench.assetId": {
+          "type": "string",
+          "default": "",
+          "description": "Asset selector. You can enter either the asset name or its UUID."
+        },
+        "appsecWorkbench.authToken": {
+          "type": "string",
+          "default": ""
+        },
+        "appsecWorkbench.selectionActionPopupEnabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show inline AppSec CodeLens actions for the current selection or symbol."
+        },
+        "appsecWorkbench.markContextPadding": {
+          "type": "number",
+          "default": 10,
+          "minimum": 0,
+          "description": "How many surrounding lines to attach when creating SOURCE/SINK/GUARD/TRANSFORM marks. The snippet is capped to the enclosing method/function when available."
+        },
+        "appsecWorkbench.debugLogs": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable verbose extension debug logs in the AppSec Workbench output channel."
+        }
       }
     },
     "commands": [
-      {"command":"appsecWorkbench.refreshContext","title":"AppSec: Refresh Context"},
-      {"command":"appsecWorkbench.markSource","title":"AppSec: Mark as Source"},
-      {"command":"appsecWorkbench.markSink","title":"AppSec: Mark as Sink"},
-      {"command":"appsecWorkbench.markGuard","title":"AppSec: Mark as Guard"},
-      {"command":"appsecWorkbench.markTransform","title":"AppSec: Mark as Transform"},
-      {"command":"appsecWorkbench.acceptCandidate","title":"AppSec: Accept Candidate"}
+      {
+        "command": "appsecWorkbench.refreshContext",
+        "title": "AppSec: Refresh Context"
+      },
+      {
+        "command": "appsecWorkbench.createAssessment",
+        "title": "AppSec: Create Assessment"
+      },
+      {
+        "command": "appsecWorkbench.setRecentMarkFilter",
+        "title": "AppSec: Filter Recent Marks"
+      },
+      {
+        "command": "appsecWorkbench.clearRecentMarkFilter",
+        "title": "AppSec: Clear Recent Mark Filter"
+      },
+      {
+        "command": "appsecWorkbench.showSelectionActions",
+        "title": "AppSec: Show Selection Actions"
+      },
+      {
+        "command": "appsecWorkbench.markSource",
+        "title": "AppSec: Mark as Source"
+      },
+      {
+        "command": "appsecWorkbench.markSink",
+        "title": "AppSec: Mark as Sink"
+      },
+      {
+        "command": "appsecWorkbench.markGuard",
+        "title": "AppSec: Mark as Guard"
+      },
+      {
+        "command": "appsecWorkbench.markTransform",
+        "title": "AppSec: Mark as Transform"
+      },
+      {
+        "command": "appsecWorkbench.createCheckFromSelection",
+        "title": "AppSec: Create Check From Selection"
+      },
+      {
+        "command": "appsecWorkbench.attachEvidenceFromSelection",
+        "title": "AppSec: Attach Evidence From Selection"
+      },
+      {
+        "command": "appsecWorkbench.openEntitySource",
+        "title": "AppSec: Open Entity Source"
+      },
+      {
+        "command": "appsecWorkbench.showLogs",
+        "title": "AppSec: Show Logs"
+      },
+      {
+        "command": "appsecWorkbench.acceptCandidate",
+        "title": "AppSec: Accept Candidate"
+      },
+      {
+        "command": "appsecWorkbench.rejectCandidate",
+        "title": "AppSec: Reject Candidate"
+      },
+      {
+        "command": "appsecWorkbench.createCaseFromContext",
+        "title": "AppSec: Create Case From Context"
+      },
+      {
+        "command": "appsecWorkbench.removeCurrentMark",
+        "title": "AppSec: Remove Current Mark"
+      },
+      {
+        "command": "appsecWorkbench.showRecentMarkActions",
+        "title": "AppSec: Show Recent Mark Actions"
+      },
+      {
+        "command": "appsecWorkbench.setCheckStatus",
+        "title": "AppSec: Set Check Status"
+      },
+      {
+        "command": "appsecWorkbench.convertCheckToFinding",
+        "title": "AppSec: Convert Check To Finding"
+      },
+      {
+        "command": "appsecWorkbench.dismissFollowUp",
+        "title": "AppSec: Dismiss Follow-Up"
+      }
     ]
   },
   "scripts": {
-    "build": "tsc -p ."
+    "build": "tsc -p .",
+    "deploy:local": "../scripts/deploy_vscode_extension.sh"
   },
   "devDependencies": {
     "@types/vscode": "^1.90.0",

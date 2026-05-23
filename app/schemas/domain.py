@@ -42,6 +42,12 @@ class ImportBatchRead(BaseModel):
     updated_at: datetime = Field(default_factory=utcnow)
 
 
+class ImportBatchUpdate(BaseModel):
+    asset_id: UUID | None = None
+    status: ImportStatus | None = None
+    summary: dict | None = None
+
+
 class CandidateRead(BaseModel):
     id: UUID = Field(default_factory=new_uuid)
     assessment_id: UUID
@@ -57,6 +63,13 @@ class CandidateRead(BaseModel):
     source: SourceType = SourceType.OTHER
     created_at: datetime = Field(default_factory=utcnow)
     updated_at: datetime = Field(default_factory=utcnow)
+
+
+class CandidateUpdate(BaseModel):
+    status: CandidateStatus | None = None
+    duplicate_of_id: UUID | None = None
+    validation_errors: list[str] | None = None
+    dedupe_key: str | None = None
 
 
 class MarkRead(BaseModel):
@@ -76,6 +89,9 @@ class CheckRead(BaseModel):
     id: UUID = Field(default_factory=new_uuid)
     assessment_id: UUID
     title: str
+    parent_check_id: UUID | None = None
+    sort_order: int = 0
+    is_checked: bool = False
     status: CheckStatus = CheckStatus.NOT_STARTED
     reason: str | None = None
     source: SourceType = SourceType.OTHER
@@ -94,6 +110,7 @@ class ObjectRead(BaseModel):
     properties: dict = Field(default_factory=dict)
     source: SourceType = SourceType.OTHER
     created_at: datetime = Field(default_factory=utcnow)
+    updated_at: datetime = Field(default_factory=utcnow)
 
 
 class CandidateAcceptRequest(BaseModel):

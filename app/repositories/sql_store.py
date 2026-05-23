@@ -1,107 +1,855 @@
 from uuid import UUID
 
-from app.db.models import AssessmentORM, AssetORM, CandidateORM, ImportBatchORM
+from app.db.models import (
+    AssessmentORM,
+    AssetORM,
+    CandidateORM,
+    CaseORM,
+    CheckORM,
+    EvidenceORM,
+    FindingORM,
+    ImportBatchORM,
+    MarkORM,
+    ObjectORM,
+    RelationORM,
+)
 from app.db.session import get_session
+from app.models.enums import CandidateStatus, CandidateType, CheckStatus, MarkKind
 from app.schemas.asset import AssetCreate, AssetRead, AssetUpdate
 from app.schemas.assessment import AssessmentCreate, AssessmentRead, AssessmentUpdate
-from app.schemas.domain import CandidateAcceptRequest, CandidateRead, ImportBatchRead, ImportCreate
+from app.schemas.case_finding import CaseCreate, CaseRead, CaseUpdate, FindingCreate, FindingRead, FindingUpdate
+from app.schemas.domain import CandidateAcceptRequest, CandidateRead, CandidateUpdate, ImportBatchRead, ImportBatchUpdate, ImportCreate
+from app.schemas.relation_evidence import EvidenceCreate, EvidenceRead, EvidenceUpdate, RelationCreate, RelationRead, RelationUpdate
+from app.schemas.workflow import CheckCreate, CheckRecord, CheckStatusUpdate, CheckUpdate, MarkCreate, MarkUpdate, ObjectCreate, ObjectUpdate
 
 
 class SqlStore:
+    def _assessment_to_schema(self, record: AssessmentORM) -> AssessmentRead:
+        return AssessmentRead.model_validate(
+            {
+                "id": record.id,
+                "title": record.title,
+                "description": record.description,
+                "status": record.status,
+                "metadata": record.metadata_json,
+                "created_at": record.created_at,
+                "updated_at": record.updated_at,
+            }
+        )
+
+    def _asset_to_schema(self, record: AssetORM) -> AssetRead:
+        return AssetRead.model_validate(
+            {
+                "id": record.id,
+                "assessment_id": record.assessment_id,
+                "type": record.type,
+                "name": record.name,
+                "locator": record.locator,
+                "version_ref": record.version_ref,
+                "metadata": record.metadata_json,
+                "created_at": record.created_at,
+                "updated_at": record.updated_at,
+            }
+        )
+
+    def _import_to_schema(self, record: ImportBatchORM) -> ImportBatchRead:
+        return ImportBatchRead.model_validate(
+            {
+                "id": record.id,
+                "assessment_id": record.assessment_id,
+                "asset_id": record.asset_id,
+                "source_type": record.source_type,
+                "source_name": record.source_name,
+                "tool_name": record.tool_name,
+                "tool_version": record.tool_version,
+                "status": record.status,
+                "summary": record.summary,
+                "created_at": record.created_at,
+                "updated_at": record.updated_at,
+            }
+        )
+
+    def _candidate_to_schema(self, record: CandidateORM) -> CandidateRead:
+        return CandidateRead.model_validate(
+            {
+                "id": record.id,
+                "assessment_id": record.assessment_id,
+                "import_batch_id": record.import_batch_id,
+                "candidate_type": record.candidate_type,
+                "proposed_object_type": record.proposed_object_type,
+                "proposed_payload": record.proposed_payload,
+                "confidence": record.confidence,
+                "status": record.status,
+                "dedupe_key": record.dedupe_key,
+                "duplicate_of_id": record.duplicate_of_id,
+                "validation_errors": record.validation_errors,
+                "source": record.source,
+                "created_at": record.created_at,
+                "updated_at": record.updated_at,
+            }
+        )
+
+    def _object_to_schema(self, record: ObjectORM):
+        from app.schemas.domain import ObjectRead
+
+        return ObjectRead.model_validate(
+            {
+                "id": record.id,
+                "assessment_id": record.assessment_id,
+                "asset_id": record.asset_id,
+                "type": record.type,
+                "kind": record.kind,
+                "name": record.name,
+                "locator": record.locator,
+                "range": record.range_json,
+                "properties": record.properties_json,
+                "source": record.source,
+                "created_at": record.created_at,
+                "updated_at": record.updated_at,
+            }
+        )
+
+    def _mark_to_schema(self, record: MarkORM):
+        from app.schemas.domain import MarkRead
+
+        return MarkRead.model_validate(
+            {
+                "id": record.id,
+                "assessment_id": record.assessment_id,
+                "object_id": record.object_id,
+                "kind": record.kind,
+                "title": record.title,
+                "note": record.note,
+                "confidence": record.confidence,
+                "status": record.status,
+                "source": record.source,
+                "created_at": record.created_at,
+            }
+        )
+
+    def _check_to_schema(self, record: CheckORM) -> CheckRecord:
+        return CheckRecord.model_validate(
+            {
+                "id": record.id,
+                "assessment_id": record.assessment_id,
+                "title": record.title,
+                "description": record.description,
+                "category": record.category,
+                "check_type": record.check_type,
+                "parent_check_id": record.parent_check_id,
+                "sort_order": record.sort_order,
+                "is_group": record.is_group,
+                "is_checked": record.is_checked,
+                "priority": record.priority,
+                "status": record.status,
+                "reason": record.reason,
+                "source": record.source,
+                "created_at": record.created_at,
+                "updated_at": record.updated_at,
+            }
+        )
+
+    def _case_to_schema(self, record: CaseORM) -> CaseRead:
+        return CaseRead.model_validate(
+            {
+                "id": record.id,
+                "assessment_id": record.assessment_id,
+                "title": record.title,
+                "description": record.description,
+                "status": record.status,
+                "severity_hint": record.severity_hint,
+                "confidence": record.confidence,
+                "created_at": record.created_at,
+                "updated_at": record.updated_at,
+            }
+        )
+
+    def _finding_to_schema(self, record: FindingORM) -> FindingRead:
+        return FindingRead.model_validate(
+            {
+                "id": record.id,
+                "assessment_id": record.assessment_id,
+                "title": record.title,
+                "severity": record.severity,
+                "status": record.status,
+                "finding_type": record.finding_type,
+                "description": record.description,
+                "impact": record.impact,
+                "recommendation": record.recommendation,
+                "created_at": record.created_at,
+                "updated_at": record.updated_at,
+            }
+        )
+
+    def _relation_to_schema(self, record: RelationORM) -> RelationRead:
+        return RelationRead.model_validate(
+            {
+                "id": record.id,
+                "assessment_id": record.assessment_id,
+                "subject_type": record.subject_type,
+                "subject_id": record.subject_id,
+                "predicate": record.predicate,
+                "object_type": record.object_type,
+                "object_id": record.object_id,
+                "confidence": record.confidence,
+                "status": record.status,
+                "source": record.source,
+                "evidence_summary": record.evidence_summary,
+                "properties": record.properties_json,
+                "created_at": record.created_at,
+                "updated_at": record.updated_at,
+            }
+        )
+
+    def _evidence_to_schema(self, record: EvidenceORM) -> EvidenceRead:
+        return EvidenceRead.model_validate(
+            {
+                "id": record.id,
+                "assessment_id": record.assessment_id,
+                "title": record.title,
+                "evidence_type": record.evidence_type,
+                "summary": record.summary,
+                "content": record.content,
+                "confidence": record.confidence,
+                "source": record.source,
+                "properties": record.properties_json,
+                "created_at": record.created_at,
+                "updated_at": record.updated_at,
+            }
+        )
+
     def create_assessment(self, payload: AssessmentCreate) -> AssessmentRead:
         with get_session() as db:
-            rec = AssessmentORM(title=payload.title, description=payload.description)
-            db.add(rec); db.commit(); db.refresh(rec)
-            return AssessmentRead.model_validate({"id": rec.id, "title": rec.title, "description": rec.description, "status": rec.status, "metadata": rec.metadata})
+            record = AssessmentORM(title=payload.title, description=payload.description)
+            db.add(record)
+            db.commit()
+            db.refresh(record)
+            return self._assessment_to_schema(record)
 
     def list_assessments(self) -> list[AssessmentRead]:
         with get_session() as db:
-            return [AssessmentRead.model_validate({"id": r.id, "title": r.title, "description": r.description, "status": r.status, "metadata": r.metadata}) for r in db.query(AssessmentORM).all()]
+            return [self._assessment_to_schema(record) for record in db.query(AssessmentORM).all()]
 
     def get_assessment(self, assessment_id: UUID) -> AssessmentRead | None:
         with get_session() as db:
-            r = db.get(AssessmentORM, str(assessment_id))
-            return None if not r else AssessmentRead.model_validate({"id": r.id, "title": r.title, "description": r.description, "status": r.status, "metadata": r.metadata})
+            record = db.get(AssessmentORM, str(assessment_id))
+            return None if record is None else self._assessment_to_schema(record)
 
     def update_assessment(self, assessment_id: UUID, payload: AssessmentUpdate) -> AssessmentRead | None:
         with get_session() as db:
-            r = db.get(AssessmentORM, str(assessment_id))
-            if not r:
+            record = db.get(AssessmentORM, str(assessment_id))
+            if record is None:
                 return None
-            for k, v in payload.model_dump(exclude_unset=True).items():
-                setattr(r, k, v)
-            db.commit(); db.refresh(r)
-            return AssessmentRead.model_validate({"id": r.id, "title": r.title, "description": r.description, "status": r.status, "metadata": r.metadata})
+            for key, value in payload.model_dump(exclude_unset=True).items():
+                setattr(record, "metadata_json" if key == "metadata" else key, value)
+            db.commit()
+            db.refresh(record)
+            return self._assessment_to_schema(record)
 
     def create_asset(self, assessment_id: UUID, payload: AssetCreate) -> AssetRead:
         with get_session() as db:
-            r = AssetORM(assessment_id=str(assessment_id), type=payload.type, name=payload.name, locator=payload.locator, version_ref=payload.version_ref, metadata=payload.metadata)
-            db.add(r); db.commit(); db.refresh(r)
-            return AssetRead.model_validate({"id": r.id, "assessment_id": r.assessment_id, "type": r.type, "name": r.name, "locator": r.locator, "version_ref": r.version_ref, "metadata": r.metadata})
+            record = AssetORM(
+                assessment_id=str(assessment_id),
+                type=payload.type,
+                name=payload.name,
+                locator=payload.locator,
+                version_ref=payload.version_ref,
+                metadata_json=payload.metadata,
+            )
+            db.add(record)
+            db.commit()
+            db.refresh(record)
+            return self._asset_to_schema(record)
 
     def list_assets(self, assessment_id: UUID) -> list[AssetRead]:
         with get_session() as db:
             rows = db.query(AssetORM).filter(AssetORM.assessment_id == str(assessment_id)).all()
-            return [AssetRead.model_validate({"id": r.id, "assessment_id": r.assessment_id, "type": r.type, "name": r.name, "locator": r.locator, "version_ref": r.version_ref, "metadata": r.metadata}) for r in rows]
+            return [self._asset_to_schema(record) for record in rows]
 
     def get_asset(self, asset_id: UUID) -> AssetRead | None:
         with get_session() as db:
-            r = db.get(AssetORM, str(asset_id))
-            return None if not r else AssetRead.model_validate({"id": r.id, "assessment_id": r.assessment_id, "type": r.type, "name": r.name, "locator": r.locator, "version_ref": r.version_ref, "metadata": r.metadata})
+            record = db.get(AssetORM, str(asset_id))
+            return None if record is None else self._asset_to_schema(record)
 
     def update_asset(self, asset_id: UUID, payload: AssetUpdate) -> AssetRead | None:
         with get_session() as db:
-            r = db.get(AssetORM, str(asset_id))
-            if not r:
+            record = db.get(AssetORM, str(asset_id))
+            if record is None:
                 return None
-            for k, v in payload.model_dump(exclude_unset=True).items(): setattr(r, k, v)
-            db.commit(); db.refresh(r)
-            return AssetRead.model_validate({"id": r.id, "assessment_id": r.assessment_id, "type": r.type, "name": r.name, "locator": r.locator, "version_ref": r.version_ref, "metadata": r.metadata})
+            for key, value in payload.model_dump(exclude_unset=True).items():
+                setattr(record, "metadata_json" if key == "metadata" else key, value)
+            db.commit()
+            db.refresh(record)
+            return self._asset_to_schema(record)
 
     def create_import(self, assessment_id: UUID, payload: ImportCreate):
         with get_session() as db:
-            batch = ImportBatchORM(assessment_id=str(assessment_id), asset_id=str(payload.asset_id) if payload.asset_id else None, source_type=payload.source.source_type, source_name=payload.source.source_name, tool_name=payload.source.tool_name, tool_version=payload.source.tool_version)
-            db.add(batch); db.flush()
-            for c in payload.candidates:
-                db.add(CandidateORM(assessment_id=str(assessment_id), import_batch_id=batch.id, candidate_type=c.candidate_type, proposed_object_type=c.proposed_object_type, proposed_payload=c.proposed_payload, confidence=c.confidence, source=c.source))
-            db.commit(); db.refresh(batch)
-            candidates = db.query(CandidateORM).filter(CandidateORM.import_batch_id == batch.id).all()
-            summary = {"candidates_created": len(candidates), "duplicates": 0, "errors": 0}
-            batch.summary = summary
-            db.commit(); db.refresh(batch)
-            return ImportBatchRead.model_validate({"id": batch.id, "assessment_id": batch.assessment_id, "asset_id": batch.asset_id, "source_type": batch.source_type, "source_name": batch.source_name, "tool_name": batch.tool_name, "tool_version": batch.tool_version, "status": batch.status, "summary": batch.summary}), [self._candidate_to_schema(x) for x in candidates]
+            batch = ImportBatchORM(
+                assessment_id=str(assessment_id),
+                asset_id=str(payload.asset_id) if payload.asset_id else None,
+                source_type=payload.source.source_type,
+                source_name=payload.source.source_name,
+                tool_name=payload.source.tool_name,
+                tool_version=payload.source.tool_version,
+            )
+            db.add(batch)
+            db.flush()
+            created: list[CandidateORM] = []
+            for candidate in payload.candidates:
+                record = CandidateORM(
+                    assessment_id=str(assessment_id),
+                    import_batch_id=batch.id,
+                    candidate_type=candidate.candidate_type,
+                    proposed_object_type=candidate.proposed_object_type,
+                    proposed_payload=candidate.proposed_payload,
+                    confidence=candidate.confidence,
+                    source=candidate.source,
+                )
+                db.add(record)
+                created.append(record)
+            db.flush()
+            batch.summary = {"candidates_created": len(created), "duplicates": 0, "errors": 0}
+            db.commit()
+            db.refresh(batch)
+            return self._import_to_schema(batch), [self._candidate_to_schema(record) for record in created]
+
+    def list_imports(self, assessment_id: UUID) -> list[ImportBatchRead]:
+        with get_session() as db:
+            rows = db.query(ImportBatchORM).filter(ImportBatchORM.assessment_id == str(assessment_id)).all()
+            return [self._import_to_schema(record) for record in rows]
+
+    def get_import(self, import_batch_id: UUID) -> ImportBatchRead | None:
+        with get_session() as db:
+            record = db.get(ImportBatchORM, str(import_batch_id))
+            return None if record is None else self._import_to_schema(record)
+
+    def update_import(self, import_batch_id: UUID, payload: ImportBatchUpdate) -> ImportBatchRead | None:
+        with get_session() as db:
+            record = db.get(ImportBatchORM, str(import_batch_id))
+            if record is None:
+                return None
+            for key, value in payload.model_dump(exclude_unset=True).items():
+                setattr(record, key, str(value) if key == "asset_id" and value is not None else value)
+            db.commit()
+            db.refresh(record)
+            return self._import_to_schema(record)
 
     def list_candidates(self, assessment_id: UUID) -> list[CandidateRead]:
         with get_session() as db:
             rows = db.query(CandidateORM).filter(CandidateORM.assessment_id == str(assessment_id)).all()
-            return [self._candidate_to_schema(x) for x in rows]
+            return [self._candidate_to_schema(record) for record in rows]
 
     def get_candidate(self, candidate_id: UUID) -> CandidateRead | None:
         with get_session() as db:
-            r = db.get(CandidateORM, str(candidate_id))
-            return None if not r else self._candidate_to_schema(r)
+            record = db.get(CandidateORM, str(candidate_id))
+            return None if record is None else self._candidate_to_schema(record)
+
+    def update_candidate(self, candidate_id: UUID, payload: CandidateUpdate) -> CandidateRead | None:
+        with get_session() as db:
+            record = db.get(CandidateORM, str(candidate_id))
+            if record is None:
+                return None
+            for key, value in payload.model_dump(exclude_unset=True).items():
+                setattr(record, key, str(value) if key == "duplicate_of_id" and value is not None else value)
+            db.commit()
+            db.refresh(record)
+            return self._candidate_to_schema(record)
+
+    def reject_candidate(self, candidate_id: UUID) -> CandidateRead | None:
+        return self.update_candidate(candidate_id, CandidateUpdate(status=CandidateStatus.REJECTED))
+
+    def create_object(self, assessment_id: UUID, payload: ObjectCreate):
+        with get_session() as db:
+            record = ObjectORM(
+                assessment_id=str(assessment_id),
+                asset_id=str(payload.asset_id) if payload.asset_id else None,
+                type=payload.type,
+                kind=payload.kind,
+                name=payload.name,
+                locator=payload.locator,
+                range_json=payload.range,
+                properties_json=payload.properties,
+                source=payload.source,
+            )
+            db.add(record)
+            db.commit()
+            db.refresh(record)
+            return self._object_to_schema(record)
+
+    def list_objects(self, assessment_id: UUID):
+        with get_session() as db:
+            rows = db.query(ObjectORM).filter(ObjectORM.assessment_id == str(assessment_id)).all()
+            return [self._object_to_schema(record) for record in rows]
+
+    def get_object(self, object_id: UUID):
+        with get_session() as db:
+            record = db.get(ObjectORM, str(object_id))
+            return None if record is None else self._object_to_schema(record)
+
+    def update_object(self, object_id: UUID, payload: ObjectUpdate):
+        with get_session() as db:
+            record = db.get(ObjectORM, str(object_id))
+            if record is None:
+                return None
+            changes = payload.model_dump(exclude_unset=True)
+            for key, value in changes.items():
+                if key == "asset_id":
+                    setattr(record, key, str(value) if value is not None else None)
+                elif key == "range":
+                    record.range_json = value
+                elif key == "properties":
+                    record.properties_json = value
+                else:
+                    setattr(record, key, value)
+            db.commit()
+            db.refresh(record)
+            return self._object_to_schema(record)
+
+    def create_mark(self, assessment_id: UUID, payload: MarkCreate):
+        with get_session() as db:
+            object_id = str(payload.object_id) if payload.object_id else None
+            if object_id is not None and payload.object_payload is not None:
+                existing_object = db.get(ObjectORM, object_id)
+                if existing_object is not None:
+                    existing_object.properties_json = {
+                        **(existing_object.properties_json or {}),
+                        **(payload.object_payload.properties or {}),
+                    }
+            if object_id is None and payload.object_payload is not None:
+                created_object = ObjectORM(
+                    assessment_id=str(assessment_id),
+                    asset_id=str(payload.object_payload.asset_id) if payload.object_payload.asset_id else None,
+                    type=payload.object_payload.type,
+                    kind=payload.object_payload.kind,
+                    name=payload.object_payload.name,
+                    locator=payload.object_payload.locator,
+                    range_json=payload.object_payload.range,
+                    properties_json=payload.object_payload.properties,
+                    source=payload.object_payload.source,
+                )
+                db.add(created_object)
+                db.flush()
+                object_id = created_object.id
+            record = MarkORM(
+                assessment_id=str(assessment_id),
+                object_id=object_id,
+                kind=payload.kind,
+                title=payload.title,
+                note=payload.note,
+                confidence=payload.confidence,
+                source=payload.source,
+            )
+            db.add(record)
+            if payload.link_to_candidate_id:
+                candidate = db.get(CandidateORM, str(payload.link_to_candidate_id))
+                if candidate is not None:
+                    candidate.status = CandidateStatus.ACCEPTED
+            db.commit()
+            db.refresh(record)
+            return self._mark_to_schema(record)
+
+    def list_marks(self, assessment_id: UUID):
+        with get_session() as db:
+            rows = db.query(MarkORM).filter(MarkORM.assessment_id == str(assessment_id)).all()
+            return [self._mark_to_schema(record) for record in rows]
+
+    def get_mark(self, mark_id: UUID):
+        with get_session() as db:
+            record = db.get(MarkORM, str(mark_id))
+            return None if record is None else self._mark_to_schema(record)
+
+    def update_mark(self, mark_id: UUID, payload: MarkUpdate):
+        with get_session() as db:
+            record = db.get(MarkORM, str(mark_id))
+            if record is None:
+                return None
+            for key, value in payload.model_dump(exclude_unset=True).items():
+                setattr(record, key, value)
+            db.commit()
+            db.refresh(record)
+            return self._mark_to_schema(record)
+
+    def delete_mark(self, mark_id: UUID) -> bool:
+        with get_session() as db:
+            record = db.get(MarkORM, str(mark_id))
+            if record is None:
+                return False
+            db.query(RelationORM).filter(
+                (RelationORM.subject_id == str(mark_id)) | (RelationORM.object_id == str(mark_id)),
+            ).delete(synchronize_session=False)
+            db.delete(record)
+            db.commit()
+            return True
+
+    def create_check(self, assessment_id: UUID, payload: CheckCreate) -> CheckRecord:
+        with get_session() as db:
+            record = CheckORM(assessment_id=str(assessment_id), **payload.model_dump())
+            if record.is_group:
+                record.is_checked = False
+            if record.is_checked and record.status == CheckStatus.NOT_STARTED:
+                record.status = CheckStatus.CHECKED_OK
+            db.add(record)
+            db.commit()
+            db.refresh(record)
+            return self._check_to_schema(record)
+
+    def list_checks(self, assessment_id: UUID) -> list[CheckRecord]:
+        with get_session() as db:
+            rows = (
+                db.query(CheckORM)
+                .filter(CheckORM.assessment_id == str(assessment_id))
+                .order_by(CheckORM.sort_order.asc(), CheckORM.created_at.asc())
+                .all()
+            )
+            return [self._check_to_schema(record) for record in rows]
+
+    def get_check(self, check_id: UUID) -> CheckRecord | None:
+        with get_session() as db:
+            record = db.get(CheckORM, str(check_id))
+            return None if record is None else self._check_to_schema(record)
+
+    def update_check_status(self, check_id: UUID, payload: CheckStatusUpdate) -> CheckRecord | None:
+        with get_session() as db:
+            record = db.get(CheckORM, str(check_id))
+            if record is None:
+                return None
+            record.status = payload.status
+            record.reason = payload.reason
+            db.commit()
+            db.refresh(record)
+            return self._check_to_schema(record)
+
+    def update_check(self, check_id: UUID, payload: CheckUpdate) -> CheckRecord | None:
+        with get_session() as db:
+            record = db.get(CheckORM, str(check_id))
+            if record is None:
+                return None
+            for key, value in payload.model_dump(exclude_unset=True).items():
+                setattr(record, key, value)
+            if record.is_group:
+                record.is_checked = False
+            db.commit()
+            db.refresh(record)
+            return self._check_to_schema(record)
+
+    def delete_check(self, check_id: UUID) -> bool:
+        with get_session() as db:
+            record = db.get(CheckORM, str(check_id))
+            if record is None:
+                return False
+            to_delete = {str(check_id)}
+            changed = True
+            while changed:
+                changed = False
+                child_ids = {
+                    row.id
+                    for row in db.query(CheckORM.id).filter(CheckORM.parent_check_id.in_(to_delete)).all()
+                    if row.id not in to_delete
+                }
+                if child_ids:
+                    to_delete.update(child_ids)
+                    changed = True
+            db.query(RelationORM).filter(
+                (RelationORM.subject_id.in_(to_delete))
+                | (RelationORM.object_id.in_(to_delete))
+            ).delete(synchronize_session=False)
+            db.query(CheckORM).filter(CheckORM.id.in_(to_delete)).delete(synchronize_session=False)
+            db.commit()
+            return True
+
+    def create_case(self, assessment_id: UUID, payload: CaseCreate) -> CaseRead:
+        with get_session() as db:
+            record = CaseORM(assessment_id=str(assessment_id), **payload.model_dump())
+            db.add(record)
+            db.commit()
+            db.refresh(record)
+            return self._case_to_schema(record)
+
+    def list_cases(self, assessment_id: UUID) -> list[CaseRead]:
+        with get_session() as db:
+            rows = (
+                db.query(CaseORM)
+                .filter(CaseORM.assessment_id == str(assessment_id))
+                .order_by(CaseORM.created_at.asc(), CaseORM.id.asc())
+                .all()
+            )
+            return [self._case_to_schema(record) for record in rows]
+
+    def get_case(self, case_id: UUID) -> CaseRead | None:
+        with get_session() as db:
+            record = db.get(CaseORM, str(case_id))
+            return None if record is None else self._case_to_schema(record)
+
+    def update_case(self, case_id: UUID, payload: CaseUpdate) -> CaseRead | None:
+        with get_session() as db:
+            record = db.get(CaseORM, str(case_id))
+            if record is None:
+                return None
+            for key, value in payload.model_dump(exclude_unset=True).items():
+                setattr(record, key, value)
+            db.commit()
+            db.refresh(record)
+            return self._case_to_schema(record)
+
+    def create_finding(self, assessment_id: UUID, payload: FindingCreate) -> FindingRead:
+        with get_session() as db:
+            record = FindingORM(assessment_id=str(assessment_id), **payload.model_dump())
+            db.add(record)
+            db.commit()
+            db.refresh(record)
+            return self._finding_to_schema(record)
+
+    def list_findings(self, assessment_id: UUID) -> list[FindingRead]:
+        with get_session() as db:
+            rows = db.query(FindingORM).filter(FindingORM.assessment_id == str(assessment_id)).all()
+            return [self._finding_to_schema(record) for record in rows]
+
+    def get_finding(self, finding_id: UUID) -> FindingRead | None:
+        with get_session() as db:
+            record = db.get(FindingORM, str(finding_id))
+            return None if record is None else self._finding_to_schema(record)
+
+    def update_finding(self, finding_id: UUID, payload: FindingUpdate) -> FindingRead | None:
+        with get_session() as db:
+            record = db.get(FindingORM, str(finding_id))
+            if record is None:
+                return None
+            for key, value in payload.model_dump(exclude_unset=True).items():
+                setattr(record, key, value)
+            db.commit()
+            db.refresh(record)
+            return self._finding_to_schema(record)
+
+    def create_relation(self, assessment_id: UUID, payload: RelationCreate) -> RelationRead:
+        with get_session() as db:
+            record = RelationORM(
+                assessment_id=str(assessment_id),
+                subject_type=payload.subject_type,
+                subject_id=str(payload.subject_id),
+                predicate=payload.predicate,
+                object_type=payload.object_type,
+                object_id=str(payload.object_id),
+                confidence=payload.confidence,
+                status=payload.status,
+                source=payload.source,
+                evidence_summary=payload.evidence_summary,
+                properties_json=payload.properties,
+            )
+            db.add(record)
+            db.commit()
+            db.refresh(record)
+            return self._relation_to_schema(record)
+
+    def list_relations(self, assessment_id: UUID) -> list[RelationRead]:
+        with get_session() as db:
+            rows = (
+                db.query(RelationORM)
+                .filter(RelationORM.assessment_id == str(assessment_id))
+                .order_by(RelationORM.created_at.asc(), RelationORM.id.asc())
+                .all()
+            )
+            return [self._relation_to_schema(record) for record in rows]
+
+    def get_relation(self, relation_id: UUID) -> RelationRead | None:
+        with get_session() as db:
+            record = db.get(RelationORM, str(relation_id))
+            return None if record is None else self._relation_to_schema(record)
+
+    def update_relation(self, relation_id: UUID, payload: RelationUpdate) -> RelationRead | None:
+        with get_session() as db:
+            record = db.get(RelationORM, str(relation_id))
+            if record is None:
+                return None
+            changes = payload.model_dump(exclude_unset=True)
+            for key, value in changes.items():
+                if key == "properties":
+                    record.properties_json = value
+                elif key in {"subject_id", "object_id"}:
+                    setattr(record, key, str(value) if value is not None else None)
+                else:
+                    setattr(record, key, value)
+            db.commit()
+            db.refresh(record)
+            return self._relation_to_schema(record)
+
+    def delete_relation(self, relation_id: UUID) -> bool:
+        with get_session() as db:
+            record = db.get(RelationORM, str(relation_id))
+            if record is None:
+                return False
+            db.delete(record)
+            db.commit()
+            return True
+
+    def create_evidence(self, assessment_id: UUID, payload: EvidenceCreate) -> tuple[EvidenceRead, list[RelationRead]]:
+        with get_session() as db:
+            evidence = EvidenceORM(
+                assessment_id=str(assessment_id),
+                title=payload.title,
+                evidence_type=payload.evidence_type,
+                summary=payload.summary,
+                content=payload.content,
+                confidence=payload.confidence,
+                source=payload.source,
+                properties_json=payload.properties,
+            )
+            db.add(evidence)
+            db.flush()
+            links: list[RelationORM] = []
+            for link in payload.link_to:
+                relation = RelationORM(
+                    assessment_id=str(assessment_id),
+                    subject_type="EVIDENCE",
+                    subject_id=evidence.id,
+                    predicate=link.predicate,
+                    object_type=link.object_type,
+                    object_id=str(link.object_id),
+                    source=payload.source,
+                )
+                db.add(relation)
+                links.append(relation)
+            db.commit()
+            db.refresh(evidence)
+            return self._evidence_to_schema(evidence), [self._relation_to_schema(relation) for relation in links]
+
+    def list_evidence(self, assessment_id: UUID) -> list[EvidenceRead]:
+        with get_session() as db:
+            rows = db.query(EvidenceORM).filter(EvidenceORM.assessment_id == str(assessment_id)).all()
+            return [self._evidence_to_schema(record) for record in rows]
+
+    def get_evidence(self, evidence_id: UUID) -> EvidenceRead | None:
+        with get_session() as db:
+            record = db.get(EvidenceORM, str(evidence_id))
+            return None if record is None else self._evidence_to_schema(record)
+
+    def update_evidence(self, evidence_id: UUID, payload: EvidenceUpdate) -> EvidenceRead | None:
+        with get_session() as db:
+            record = db.get(EvidenceORM, str(evidence_id))
+            if record is None:
+                return None
+            changes = payload.model_dump(exclude_unset=True)
+            for key, value in changes.items():
+                if key == "properties":
+                    record.properties_json = value
+                else:
+                    setattr(record, key, value)
+            db.commit()
+            db.refresh(record)
+            return self._evidence_to_schema(record)
 
     def accept_candidate(self, candidate_id: UUID, payload: CandidateAcceptRequest) -> dict:
         with get_session() as db:
-            r = db.get(CandidateORM, str(candidate_id))
-            if not r:
+            candidate = db.get(CandidateORM, str(candidate_id))
+            if candidate is None:
                 raise KeyError
-            r.status = "ACCEPTED"
+            if candidate.status == CandidateStatus.ACCEPTED:
+                return {"object_ids": [], "mark_ids": [], "relation_ids": [], "check_ids": [], "case_ids": [], "finding_ids": [], "evidence_ids": []}
+            proposed = payload.override_payload or candidate.proposed_payload
+            created = {"object_ids": [], "mark_ids": [], "relation_ids": [], "check_ids": [], "case_ids": [], "finding_ids": [], "evidence_ids": []}
+            if candidate.candidate_type == CandidateType.OBJECT:
+                obj = ObjectORM(
+                    assessment_id=candidate.assessment_id,
+                    asset_id=proposed.get("asset_id"),
+                    type=proposed.get("type", "UNKNOWN"),
+                    kind=proposed.get("kind", "UNKNOWN"),
+                    name=proposed.get("name", "Unnamed object"),
+                    locator=proposed.get("locator"),
+                    range_json=proposed.get("range"),
+                    properties_json=proposed.get("properties", {}),
+                    source=candidate.source,
+                )
+                db.add(obj)
+                db.flush()
+                created["object_ids"].append(obj.id)
+            elif candidate.candidate_type == CandidateType.MARK:
+                object_payload = proposed.get("object", {})
+                obj = ObjectORM(
+                    assessment_id=candidate.assessment_id,
+                    asset_id=object_payload.get("asset_id"),
+                    type=object_payload.get("type", "CALLSITE"),
+                    kind=object_payload.get("kind", "UNKNOWN"),
+                    name=object_payload.get("name", proposed.get("title", "Mark object")),
+                    locator=object_payload.get("locator"),
+                    range_json=object_payload.get("range"),
+                    properties_json=object_payload.get("properties", {}),
+                    source=candidate.source,
+                )
+                db.add(obj)
+                db.flush()
+                mark = MarkORM(
+                    assessment_id=candidate.assessment_id,
+                    object_id=obj.id,
+                    kind=MarkKind(proposed.get("kind", "NOTE")),
+                    title=proposed.get("title", "Imported mark"),
+                    note=proposed.get("note"),
+                    confidence=candidate.confidence,
+                    source=candidate.source,
+                )
+                db.add(mark)
+                db.flush()
+                created["object_ids"].append(obj.id)
+                created["mark_ids"].append(mark.id)
+            elif candidate.candidate_type == CandidateType.CHECK:
+                check = CheckORM(
+                    assessment_id=candidate.assessment_id,
+                    title=proposed.get("title", "Imported check"),
+                    description=proposed.get("description", ""),
+                    category=proposed.get("category"),
+                    check_type=proposed.get("check_type"),
+                    priority=proposed.get("priority", "MEDIUM"),
+                    status=CheckStatus(proposed.get("status", "NOT_STARTED")),
+                    reason=proposed.get("reason"),
+                    source=candidate.source,
+                )
+                db.add(check)
+                db.flush()
+                created["check_ids"].append(check.id)
+            elif candidate.candidate_type == CandidateType.CASE:
+                case = CaseORM(
+                    assessment_id=candidate.assessment_id,
+                    title=proposed.get("title", "Imported case"),
+                    description=proposed.get("description", ""),
+                    severity_hint=proposed.get("severity_hint"),
+                    confidence=proposed.get("confidence", candidate.confidence),
+                )
+                db.add(case)
+                db.flush()
+                created["case_ids"].append(case.id)
+            elif candidate.candidate_type == CandidateType.EVIDENCE:
+                evidence = EvidenceORM(
+                    assessment_id=candidate.assessment_id,
+                    title=proposed.get("title", "Imported evidence"),
+                    evidence_type=proposed.get("evidence_type", "NOTE"),
+                    summary=proposed.get("summary", ""),
+                    content=proposed.get("content", ""),
+                    confidence=proposed.get("confidence", candidate.confidence),
+                    source=candidate.source,
+                    properties_json=proposed.get("properties", {}),
+                )
+                db.add(evidence)
+                db.flush()
+                created["evidence_ids"].append(evidence.id)
+            candidate.status = CandidateStatus.ACCEPTED
             db.commit()
-            return {"object_ids": [], "mark_ids": [], "relation_ids": [], "check_ids": [], "case_ids": []}
+            return created
 
-    def _candidate_to_schema(self, r: CandidateORM) -> CandidateRead:
-        return CandidateRead.model_validate({
-            "id": r.id,
-            "assessment_id": r.assessment_id,
-            "import_batch_id": r.import_batch_id,
-            "candidate_type": r.candidate_type,
-            "proposed_object_type": r.proposed_object_type,
-            "proposed_payload": r.proposed_payload,
-            "confidence": r.confidence,
-            "status": r.status,
-            "dedupe_key": r.dedupe_key,
-            "duplicate_of_id": r.duplicate_of_id,
-            "validation_errors": r.validation_errors,
-            "source": r.source,
-        })
+    def convert_check_to_finding(self, check_id: UUID, payload: FindingCreate) -> FindingRead | None:
+        with get_session() as db:
+            check = db.get(CheckORM, str(check_id))
+            if check is None or check.status not in {CheckStatus.FAILED, CheckStatus.CHECKED_WEAK}:
+                return None
+            finding = FindingORM(assessment_id=check.assessment_id, **payload.model_dump())
+            db.add(finding)
+            db.flush()
+            relation = RelationORM(
+                assessment_id=check.assessment_id,
+                subject_type="FINDING",
+                subject_id=finding.id,
+                predicate="GENERATED_FROM",
+                object_type="CHECK",
+                object_id=check.id,
+            )
+            db.add(relation)
+            db.commit()
+            db.refresh(finding)
+            return self._finding_to_schema(finding)

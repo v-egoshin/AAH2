@@ -22,6 +22,15 @@ class CaseRead(BaseModel):
     severity_hint: str | None = None
     confidence: str = "MEDIUM"
     created_at: datetime = Field(default_factory=utcnow)
+    updated_at: datetime = Field(default_factory=utcnow)
+
+
+class CaseUpdate(BaseModel):
+    title: str | None = None
+    description: str | None = None
+    status: str | None = None
+    severity_hint: str | None = None
+    confidence: str | None = None
 
 
 class FindingCreate(BaseModel):
@@ -44,3 +53,14 @@ class FindingRead(BaseModel):
     impact: str
     recommendation: str
     created_at: datetime = Field(default_factory=utcnow)
+    updated_at: datetime = Field(default_factory=utcnow)
+
+
+class FindingUpdate(BaseModel):
+    title: str | None = None
+    severity: str | None = None
+    status: str | None = None
+    finding_type: str | None = None
+    description: str | None = None
+    impact: str | None = None
+    recommendation: str | None = None

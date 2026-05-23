@@ -33,6 +33,19 @@ class RelationRead(BaseModel):
     evidence_summary: str | None = None
     properties: dict = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=utcnow)
+    updated_at: datetime = Field(default_factory=utcnow)
+
+
+class RelationUpdate(BaseModel):
+    subject_type: str | None = None
+    subject_id: UUID | None = None
+    predicate: str | None = None
+    object_type: str | None = None
+    object_id: UUID | None = None
+    confidence: str | None = None
+    status: str | None = None
+    evidence_summary: str | None = None
+    properties: dict | None = None
 
 
 class EvidenceLink(BaseModel):
@@ -63,6 +76,16 @@ class EvidenceRead(BaseModel):
     source: str = "MANUAL_JSON"
     properties: dict = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=utcnow)
+    updated_at: datetime = Field(default_factory=utcnow)
+
+
+class EvidenceUpdate(BaseModel):
+    title: str | None = None
+    evidence_type: str | None = None
+    summary: str | None = None
+    content: str | None = None
+    confidence: str | None = None
+    properties: dict | None = None
 
 
 class CheckConvertToFindingRequest(BaseModel):

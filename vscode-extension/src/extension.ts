@@ -1,31 +1,145 @@
 import * as vscode from "vscode";
-import { WorkbenchApiClient } from "./api/client";
-import { registerCandidateCommands } from "./commands/candidate";
-import { registerMarkCommands } from "./commands/mark";
+import { registerAssessmentCommands } from "./commands/assessment";
+import { getSelectionTarget, registerMarkCommands, SelectionActionCodeLensProvider } from "./commands/mark";
+import { ReviewEntity, WorkbenchApiClient } from "./api/client";
+import { log, showLogs } from "./log";
 import { readState } from "./state/assessmentState";
+import { configureActiveCaseStorage } from "./state/activeCase";
+import { RecentMarksPanel } from "./state/recentMarks";
 import { ContextPanel } from "./views/contextPanel";
+import { MarkDecorations } from "./views/markDecorations";
+
+function parseEntityTarget(entity: ReviewEntity) {
+  const locator = entity.locator || "";
+  const match = locator.match(/^(.*?)(?::(\d+))?(?::(\d+))?$/);
+  if (!match || !match[1]) {
+    return null;
+  }
+  return {
+    file: match[1],
+    line: match[2] ? Number(match[2]) : 1,
+    column: match[3] ? Number(match[3]) : 1,
+  };
+}
 
 export function activate(context: vscode.ExtensionContext) {
+  log("Extension activated");
+  configureActiveCaseStorage(context.workspaceState);
   const panel = new ContextPanel();
   panel.register(context);
+  const recentMarksPanel = new RecentMarksPanel();
+  const markDecorations = new MarkDecorations(context);
+  context.subscriptions.push({ dispose: () => markDecorations.dispose() });
 
-  registerMarkCommands(context);
-  registerCandidateCommands(context);
+  const codeLensProvider = new SelectionActionCodeLensProvider();
 
-  const refresh = async () => {
+  registerAssessmentCommands(context);
+  registerMarkCommands(context, codeLensProvider, recentMarksPanel);
+
+  let refreshTimer: ReturnType<typeof setTimeout> | undefined;
+  let inFlightRefreshKey = "";
+  let lastAppliedRefreshKey = "";
+  let refreshSequence = 0;
+
+  const runRefresh = async (force = false) => {
     const editor = vscode.window.activeTextEditor;
-    if (!editor) return;
+    if (!editor) {
+      log("Refresh skipped: no active editor");
+      return;
+    }
     const state = readState();
-    if (!state.assessmentId || !state.assetId) return;
-    const api = new WorkbenchApiClient(state);
+    if (!state.assessmentId) {
+      log("Refresh skipped: assessmentId is empty");
+      return;
+    }
     const file = vscode.workspace.asRelativePath(editor.document.uri);
     const line = editor.selection.active.line + 1;
-    const payload = await api.getReviewContext(file, line);
-    panel.setContextPayload(payload);
+    const refreshKey = `${file}:${line}`;
+    if (!force && (refreshKey === inFlightRefreshKey || refreshKey === lastAppliedRefreshKey)) {
+      log(`Refresh skipped: duplicate ${refreshKey}`);
+      return;
+    }
+
+    const seq = ++refreshSequence;
+    inFlightRefreshKey = refreshKey;
+    const api = new WorkbenchApiClient(state);
+    log(`Refresh review context for ${refreshKey}`);
+    try {
+      const payload = await api.getReviewContext(file, line);
+      if (seq !== refreshSequence) {
+        log(`Refresh ignored: stale response for ${refreshKey}`);
+        return;
+      }
+      codeLensProvider.setContextPayload(payload);
+      panel.setContextPayload(payload);
+      markDecorations.apply(editor, payload);
+      recentMarksPanel.refresh();
+      codeLensProvider.refresh();
+      lastAppliedRefreshKey = refreshKey;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      log(`Refresh failed for ${refreshKey}: ${message}`);
+    } finally {
+      if (inFlightRefreshKey === refreshKey) {
+        inFlightRefreshKey = "";
+      }
+    }
+  };
+
+  const scheduleRefresh = (force = false, delayMs = 180) => {
+    if (refreshTimer) {
+      clearTimeout(refreshTimer);
+    }
+    refreshTimer = setTimeout(() => {
+      refreshTimer = undefined;
+      void runRefresh(force);
+    }, delayMs);
+  };
+
+  const refresh = async () => {
+    await runRefresh(true);
   };
 
   context.subscriptions.push(vscode.commands.registerCommand("appsecWorkbench.refreshContext", refresh));
-  context.subscriptions.push(vscode.window.onDidChangeTextEditorSelection(() => void refresh()));
+  context.subscriptions.push(vscode.commands.registerCommand("appsecWorkbench.showLogs", () => showLogs()));
+  context.subscriptions.push(vscode.commands.registerCommand("appsecWorkbench.setRecentMarkFilter", async () => {
+    const value = await vscode.window.showInputBox({
+      prompt: "Filter recent marks",
+      placeHolder: "source, sink, locator, title...",
+      value: "",
+    });
+    if (value === undefined) {
+      return;
+    }
+    panel.setRecentFilter(value);
+  }));
+  context.subscriptions.push(vscode.commands.registerCommand("appsecWorkbench.clearRecentMarkFilter", async () => {
+    panel.clearRecentFilter();
+  }));
+  context.subscriptions.push(vscode.commands.registerCommand("appsecWorkbench.openEntitySource", async (entity: ReviewEntity) => {
+    const target = parseEntityTarget(entity);
+    if (!target) {
+      return;
+    }
+    const uri = vscode.Uri.file(vscode.workspace.workspaceFolders?.[0] ? `${vscode.workspace.workspaceFolders[0].uri.fsPath}/${target.file}` : target.file);
+    const doc = await vscode.workspace.openTextDocument(uri);
+    const editor = await vscode.window.showTextDocument(doc);
+    const position = new vscode.Position(Math.max(0, target.line - 1), Math.max(0, target.column - 1));
+    editor.selection = new vscode.Selection(position, position);
+    editor.revealRange(new vscode.Range(position, position), vscode.TextEditorRevealType.InCenter);
+  }));
+  context.subscriptions.push(vscode.window.onDidChangeTextEditorSelection(() => {
+    log("Selection changed");
+    codeLensProvider.onSelectionTargetChanged(vscode.window.activeTextEditor ? getSelectionTarget(vscode.window.activeTextEditor) : null);
+    codeLensProvider.refresh();
+    scheduleRefresh(false, 180);
+  }));
+  context.subscriptions.push(vscode.window.onDidChangeActiveTextEditor(() => {
+    log("Active editor changed");
+    codeLensProvider.onSelectionTargetChanged(vscode.window.activeTextEditor ? getSelectionTarget(vscode.window.activeTextEditor) : null);
+    codeLensProvider.refresh();
+    scheduleRefresh(true, 60);
+  }));
 }
 
 export function deactivate() {}

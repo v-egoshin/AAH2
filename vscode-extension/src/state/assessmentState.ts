@@ -5,6 +5,8 @@ export type ExtensionState = {
   assetId: string;
   apiBaseUrl: string;
   authToken: string;
+  selectionActionPopupEnabled: boolean;
+  debugLogs: boolean;
 };
 
 export function readState(): ExtensionState {
@@ -14,5 +16,7 @@ export function readState(): ExtensionState {
     assessmentId: cfg.get<string>("assessmentId", ""),
     assetId: cfg.get<string>("assetId", ""),
     authToken: cfg.get<string>("authToken", ""),
+    selectionActionPopupEnabled: cfg.get<boolean>("selectionActionPopupEnabled", true),
+    debugLogs: cfg.get<boolean>("debugLogs", false),
   };
 }

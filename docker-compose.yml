@@ -1,11 +1,31 @@
 services:
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: appsec_workbench
+      POSTGRES_USER: appsec
+      POSTGRES_PASSWORD: appsec
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U appsec -d appsec_workbench"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
   backend:
     build:
       context: .
       dockerfile: Dockerfile.backend
       network: host
+    depends_on:
+      db:
+        condition: service_healthy
     ports:
       - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql+psycopg://appsec:appsec@db:5432/appsec_workbench
 
   web:
     build:
@@ -18,3 +38,6 @@ services:
       - backend
     environment:
       - VITE_API_BASE_URL=http://localhost:8000/api
+
+volumes:
+  postgres_data:

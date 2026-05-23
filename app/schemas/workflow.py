@@ -18,6 +18,16 @@ class ObjectCreate(BaseModel):
     source: SourceType = SourceType.OTHER
 
 
+class ObjectUpdate(BaseModel):
+    asset_id: UUID | None = None
+    type: str | None = None
+    kind: str | None = None
+    name: str | None = None
+    locator: str | None = None
+    range: dict | None = None
+    properties: dict | None = None
+
+
 class MarkCreate(BaseModel):
     object_id: UUID | None = None
     object_payload: ObjectCreate | None = None
@@ -46,6 +56,10 @@ class CheckCreate(BaseModel):
     description: str = ""
     category: str | None = None
     check_type: str | None = None
+    parent_check_id: UUID | None = None
+    sort_order: int = 0
+    is_group: bool = False
+    is_checked: bool = False
     priority: str = "MEDIUM"
     status: CheckStatus = CheckStatus.NOT_STARTED
     reason: str | None = None
@@ -63,6 +77,20 @@ class CheckStatusUpdate(BaseModel):
         return self
 
 
+class CheckUpdate(BaseModel):
+    title: str | None = None
+    description: str | None = None
+    category: str | None = None
+    check_type: str | None = None
+    parent_check_id: UUID | None = None
+    sort_order: int | None = None
+    is_group: bool | None = None
+    is_checked: bool | None = None
+    priority: str | None = None
+    status: CheckStatus | None = None
+    reason: str | None = None
+
+
 class CheckRecord(BaseModel):
     id: UUID = Field(default_factory=new_uuid)
     assessment_id: UUID
@@ -70,6 +98,10 @@ class CheckRecord(BaseModel):
     description: str = ""
     category: str | None = None
     check_type: str | None = None
+    parent_check_id: UUID | None = None
+    sort_order: int = 0
+    is_group: bool = False
+    is_checked: bool = False
     priority: str = "MEDIUM"
     status: CheckStatus = CheckStatus.NOT_STARTED
     reason: str | None = None
