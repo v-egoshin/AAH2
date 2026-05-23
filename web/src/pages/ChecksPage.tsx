@@ -638,16 +638,14 @@ export function ChecksPage() {
     if (!titles.length) {
       return;
     }
-    const effectiveParentId = bulkTargetRow?.is_group
-      ? bulkTargetRow.id
-      : (bulkTargetRow?.parent_check_id ?? bulkAddTargetId ?? null);
+    const effectiveParentId = bulkTargetRow?.id ?? null;
     for (const title of titles) {
       await createCheck({
         title,
         parent_check_id: effectiveParentId,
       });
     }
-    const expandTargetId = bulkTargetRow?.is_group ? bulkTargetRow.id : (bulkTargetRow?.parent_check_id ?? bulkAddTargetId ?? null);
+    const expandTargetId = bulkTargetRow?.id ?? null;
     if (expandTargetId) {
       setCollapsedIds((current) => {
         const next = new Set(current);
@@ -868,14 +866,18 @@ export function ChecksPage() {
             <ContextMenuItem onSelect={() => {
               setBulkDraft("");
               setBulkAddTargetRowId(row.id);
-              setBulkAddTargetId(row.is_group ? row.id : (row.parent_check_id ?? null));
+              setBulkAddTargetId(row.id);
             }}>
               Add checks in bulk
             </ContextMenuItem>
             <ContextMenuSeparator />
             {!row.is_group ? (
               <>
-                <ContextMenuItem danger onSelect={() => { void deleteCheckRow(row); }}>
+                <ContextMenuItem danger onSelect={() => {
+                  void (selectedIds.has(row.id) && selectedCheckIds.length > 1
+                    ? deleteSelectedChecks()
+                    : deleteCheckRow(row));
+                }}>
                   {selectedIds.has(row.id) && selectedCheckIds.length > 1 ? `Delete selected (${selectedCheckIds.length})` : "Delete check"}
                 </ContextMenuItem>
                 <ContextMenuSeparator />
@@ -1224,7 +1226,7 @@ export function ChecksPage() {
         >
           {bulkTargetRow ? (
             <div className="small">
-              Target: {bulkTargetRow.is_group ? `children of ${bulkTargetRow.title}` : `siblings under ${rows.find((row) => row.id === bulkTargetRow.parent_check_id)?.title ?? "root"}`}
+              Target: children of {bulkTargetRow.title}
             </div>
           ) : null}
           <div className="small">Add checks as a list. Each non-empty line will be created as a separate check.</div>
