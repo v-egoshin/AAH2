@@ -812,6 +812,26 @@ a { color: inherit; }
 .relation-tree-hit.is-drop-target {
   background: rgba(36, 93, 193, 0.08);
 }
+.entity-kind-icon {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  display: block;
+}
+.entity-dead-end-badge {
+  flex: 0 0 auto;
+  width: 12px;
+  height: 12px;
+  display: block;
+  opacity: 0.85;
+}
+.entity-dead-end-badge.is-inherited {
+  opacity: 0.55;
+}
+.case-tree-entity-label.is-snippet-toggle,
+.case-tree-entity-label.is-navigable {
+  cursor: pointer;
+}
 .case-tree-row-button {
   display: inline-flex;
   align-items: center;
@@ -821,7 +841,6 @@ a { color: inherit; }
   border: 0;
   background: transparent;
   color: inherit;
-  cursor: pointer;
   text-align: left;
 }
 .case-tree-row-button.is-active .case-tree-entity-label {

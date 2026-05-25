@@ -10,11 +10,17 @@
     "*",
     "onStartupFinished",
     "onView:appsecContext",
+    "onView:appsecChecks2",
+    "onView:appsecLinkedEntities",
     "onCommand:appsecWorkbench.refreshContext",
+    "onCommand:appsecWorkbench.refreshLinkedEntities",
+    "onCommand:appsecWorkbench.selectCheckInChecks",
     "onCommand:appsecWorkbench.createAssessment",
     "onCommand:appsecWorkbench.setRecentMarkFilter",
     "onCommand:appsecWorkbench.clearRecentMarkFilter",
     "onCommand:appsecWorkbench.showSelectionActions",
+    "onCommand:appsecWorkbench.markNote",
+    "onCommand:appsecWorkbench.markAny",
     "onCommand:appsecWorkbench.markSource",
     "onCommand:appsecWorkbench.markSink",
     "onCommand:appsecWorkbench.markGuard",
@@ -26,6 +32,7 @@
     "onCommand:appsecWorkbench.showRecentMarkActions",
     "onCommand:appsecWorkbench.setCheckStatus",
     "onCommand:appsecWorkbench.convertCheckToFinding",
+    "onCommand:appsecWorkbench.toggleMarkDeadEnd",
     "onCommand:appsecWorkbench.dismissFollowUp",
     "onCommand:appsecWorkbench.openEntitySource",
     "onCommand:appsecWorkbench.acceptCandidate",
@@ -46,6 +53,16 @@
         {
           "id": "appsecContext",
           "name": "AppSec Context",
+          "type": "webview"
+        },
+        {
+          "id": "appsecChecks2",
+          "name": "AppSec Checks",
+          "type": "webview"
+        },
+        {
+          "id": "appsecLinkedEntities",
+          "name": "Linked Entities",
           "type": "webview"
         }
       ]
@@ -95,6 +112,14 @@
         "title": "AppSec: Refresh Context"
       },
       {
+        "command": "appsecWorkbench.refreshLinkedEntities",
+        "title": "AppSec: Refresh Linked Entities"
+      },
+      {
+        "command": "appsecWorkbench.selectCheckInChecks",
+        "title": "AppSec: Select Check In Checks"
+      },
+      {
         "command": "appsecWorkbench.createAssessment",
         "title": "AppSec: Create Assessment"
       },
@@ -109,6 +134,10 @@
       {
         "command": "appsecWorkbench.showSelectionActions",
         "title": "AppSec: Show Selection Actions"
+      },
+      {
+        "command": "appsecWorkbench.markNote",
+        "title": "AppSec: Mark"
       },
       {
         "command": "appsecWorkbench.markSource",
@@ -173,15 +202,64 @@
       {
         "command": "appsecWorkbench.dismissFollowUp",
         "title": "AppSec: Dismiss Follow-Up"
+      },
+      {
+        "command": "appsecWorkbench.toggleMarkDeadEnd",
+        "title": "AppSec: Toggle Dead End"
       }
-    ]
+    ],
+    "menus": {
+      "editor/lineNumber/context": [
+        {
+          "command": "appsecWorkbench.markNote",
+          "group": "appsec@1"
+        },
+        {
+          "command": "appsecWorkbench.markSource",
+          "group": "appsec@2"
+        },
+        {
+          "command": "appsecWorkbench.markSink",
+          "group": "appsec@3"
+        },
+        {
+          "command": "appsecWorkbench.markGuard",
+          "group": "appsec@4"
+        },
+        {
+          "command": "appsecWorkbench.markTransform",
+          "group": "appsec@5"
+        },
+        {
+          "command": "appsecWorkbench.showSelectionActions",
+          "group": "appsec@6"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "appsecWorkbench.showSelectionActions",
+          "group": "appsec@1",
+          "when": "editorTextFocus"
+        }
+      ]
+    }
   },
   "scripts": {
     "build": "tsc -p .",
+    "build:webview-linked-entities": "vite build --config webview-linked-entities/vite.config.ts",
+    "build:all": "npm run build && npm run build:webview-linked-entities",
     "deploy:local": "../scripts/deploy_vscode_extension.sh"
   },
   "devDependencies": {
+    "@types/react": "^18.3.29",
+    "@types/react-dom": "^18.3.7",
     "@types/vscode": "^1.90.0",
-    "typescript": "^5.7.2"
+    "@vitejs/plugin-react": "^4.7.0",
+    "typescript": "^5.7.2",
+    "vite": "^5.4.21"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
   }
 }

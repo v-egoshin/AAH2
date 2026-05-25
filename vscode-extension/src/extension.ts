@@ -6,7 +6,9 @@ import { log, showLogs } from "./log";
 import { readState } from "./state/assessmentState";
 import { configureActiveCaseStorage } from "./state/activeCase";
 import { RecentMarksPanel } from "./state/recentMarks";
+import { Checks2Panel } from "./views/checks2Panel";
 import { ContextPanel } from "./views/contextPanel";
+import { LinkedEntitiesPanel } from "./views/linkedEntitiesPanel";
 import { MarkDecorations } from "./views/markDecorations";
 
 function parseEntityTarget(entity: ReviewEntity) {
@@ -27,6 +29,10 @@ export function activate(context: vscode.ExtensionContext) {
   configureActiveCaseStorage(context.workspaceState);
   const panel = new ContextPanel();
   panel.register(context);
+  const checksPanel = new Checks2Panel(context.extensionUri);
+  checksPanel.register(context);
+  const linkedEntitiesPanel = new LinkedEntitiesPanel(context.extensionUri);
+  linkedEntitiesPanel.register(context);
   const recentMarksPanel = new RecentMarksPanel();
   const markDecorations = new MarkDecorations(context);
   context.subscriptions.push({ dispose: () => markDecorations.dispose() });
@@ -101,6 +107,8 @@ export function activate(context: vscode.ExtensionContext) {
   };
 
   context.subscriptions.push(vscode.commands.registerCommand("appsecWorkbench.refreshContext", refresh));
+  context.subscriptions.push(vscode.commands.registerCommand("appsecWorkbench.refreshLinkedEntities", () => linkedEntitiesPanel.refreshConfig()));
+  context.subscriptions.push(vscode.commands.registerCommand("appsecWorkbench.selectCheckInChecks", (checkId: string) => checksPanel.selectCheck(checkId)));
   context.subscriptions.push(vscode.commands.registerCommand("appsecWorkbench.showLogs", () => showLogs()));
   context.subscriptions.push(vscode.commands.registerCommand("appsecWorkbench.setRecentMarkFilter", async () => {
     const value = await vscode.window.showInputBox({

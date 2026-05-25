@@ -68,6 +68,7 @@ export type MarkRecord = {
   confidence: string;
   status: string;
   source?: string;
+  is_dead_end?: boolean;
 };
 
 export type CheckRecord = {

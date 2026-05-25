@@ -32,6 +32,19 @@ def _ensure_check_columns() -> None:
             connection.execute(text(statement))
 
 
+def _ensure_mark_columns() -> None:
+    inspector = inspect(engine)
+    if "marks" not in inspector.get_table_names():
+        return
+    statements = [
+        "ALTER TABLE marks ADD COLUMN IF NOT EXISTS is_dead_end BOOLEAN DEFAULT FALSE NOT NULL",
+    ]
+    with engine.begin() as connection:
+        for statement in statements:
+            connection.execute(text(statement))
+
+
 def init_db() -> None:
     Base.metadata.create_all(bind=engine)
     _ensure_check_columns()
+    _ensure_mark_columns()

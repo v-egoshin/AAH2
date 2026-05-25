@@ -123,6 +123,7 @@ class SqlStore:
                 "confidence": record.confidence,
                 "status": record.status,
                 "source": record.source,
+                "is_dead_end": bool(record.is_dead_end),
                 "created_at": record.created_at,
             }
         )

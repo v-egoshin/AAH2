@@ -134,6 +134,93 @@ function getRecentOppositeMark(kind) {
     const opposite = oppositeKind(kind);
     return opposite ? (0, recentMarks_1.getRecentMarks)(opposite)[0] : null;
 }
+function isSelectionTarget(value) {
+    if (!value || typeof value !== "object") {
+        return false;
+    }
+    const candidate = value;
+    return typeof candidate.file === "string"
+        && typeof candidate.startLine === "number"
+        && typeof candidate.endLine === "number"
+        && typeof candidate.title === "string"
+        && typeof candidate.locator === "string";
+}
+function editorForUri(uri) {
+    if (!uri) {
+        return vscode.window.activeTextEditor;
+    }
+    return vscode.window.visibleTextEditors.find((item) => item.document.uri.toString() === uri.toString())
+        ?? (vscode.window.activeTextEditor?.document.uri.toString() === uri.toString() ? vscode.window.activeTextEditor : undefined);
+}
+function targetFromEditorLine(editor, line) {
+    const boundedLine = Math.max(0, Math.min(line, editor.document.lineCount - 1));
+    const documentLine = editor.document.lineAt(boundedLine);
+    const text = documentLine.text.trim() ? documentLine.text : editor.document.getText(documentLine.range);
+    const title = normalizeTitle(text || `Line ${boundedLine + 1}`);
+    if (!title) {
+        return null;
+    }
+    return {
+        file: vscode.workspace.asRelativePath(editor.document.uri),
+        startLine: boundedLine + 1,
+        endLine: boundedLine + 1,
+        title,
+        locator: `${vscode.workspace.asRelativePath(editor.document.uri)}:${boundedLine + 1}`,
+        selectedText: text,
+        selectionStartOffset: editor.document.offsetAt(documentLine.range.start),
+        selectionEndOffset: editor.document.offsetAt(documentLine.range.end),
+    };
+}
+function targetFromEditorRange(editor, range) {
+    editor.selection = new vscode.Selection(range.start, range.end);
+    return getSelectionTarget(editor) ?? targetFromEditorLine(editor, range.start.line);
+}
+function selectionTargetFromCommandArgs(args) {
+    for (const arg of args) {
+        if (isSelectionTarget(arg)) {
+            return arg;
+        }
+    }
+    const uri = args.find((arg) => arg instanceof vscode.Uri);
+    const range = args.find((arg) => arg instanceof vscode.Range);
+    const position = args.find((arg) => arg instanceof vscode.Position);
+    const editor = editorForUri(uri);
+    if (editor && range) {
+        return targetFromEditorRange(editor, range) ?? undefined;
+    }
+    if (editor && position) {
+        return targetFromEditorLine(editor, position.line) ?? undefined;
+    }
+    for (const arg of args) {
+        if (!arg || typeof arg !== "object") {
+            continue;
+        }
+        const record = arg;
+        const nestedUri = record.uri instanceof vscode.Uri
+            ? record.uri
+            : record.resource instanceof vscode.Uri
+                ? record.resource
+                : undefined;
+        const nestedEditor = editorForUri(nestedUri) ?? editor;
+        const nestedRange = record.range instanceof vscode.Range
+            ? record.range
+            : record.selection instanceof vscode.Range
+                ? record.selection
+                : undefined;
+        if (nestedEditor && nestedRange) {
+            return targetFromEditorRange(nestedEditor, nestedRange) ?? undefined;
+        }
+        const rawLine = typeof record.lineNumber === "number"
+            ? record.lineNumber
+            : typeof record.line === "number"
+                ? record.line
+                : undefined;
+        if (nestedEditor && typeof rawLine === "number") {
+            return targetFromEditorLine(nestedEditor, rawLine > 0 ? rawLine - 1 : rawLine) ?? undefined;
+        }
+    }
+    return undefined;
+}
 function getCurrentMarkForTarget(provider, target) {
     if (!target) {
         return currentMark(provider.getContextPayload());
@@ -422,6 +509,21 @@ async function createMark(kind, provider, forcePrompt = false, explicitEditor, e
     provider.setFollowUp({ target, kind });
     provider.refresh();
     vscode.window.showInformationMessage(`AppSec: ${kind} marked`);
+    await refreshContext(provider);
+}
+async function toggleCurrentMarkDeadEnd(provider, explicitTarget) {
+    const editor = vscode.window.activeTextEditor;
+    const target = explicitTarget ?? (editor ? getSelectionTarget(editor) : null);
+    const payload = target ? getScopedPayload(provider, target) : provider.getContextPayload();
+    const mark = currentMark(payload);
+    if (!mark) {
+        vscode.window.showWarningMessage("AppSec: no current mark on this line");
+        return;
+    }
+    const nextValue = !mark.is_dead_end;
+    const api = new client_1.WorkbenchApiClient((0, assessmentState_1.readState)());
+    await api.updateMark(mark.id, { is_dead_end: nextValue });
+    vscode.window.showInformationMessage(nextValue ? "AppSec: marked as dead end" : "AppSec: dead-end mark removed");
     await refreshContext(provider);
 }
 async function removeCurrentMark(provider, explicitTarget) {
@@ -843,6 +945,7 @@ class SelectionActionCodeLensProvider {
                     ? (markInActiveCase ? `In Active Case: ${activeCase.title}` : `Add to Active Case: ${activeCase.title}`)
                     : "Set Active Case first", markInActiveCase || !activeCase?.id ? "appsecWorkbench.refreshContext" : "appsecWorkbench.addCurrentMarkToActiveCase"),
                 makeLens("Create Check", "appsecWorkbench.createCheckFromSelection", [target]),
+                makeLens(mark.is_dead_end ? "Remove dead end" : "Dead end", "appsecWorkbench.toggleMarkDeadEnd", [target]),
                 makeLens("Remove Mark", "appsecWorkbench.removeCurrentMark", [target]),
             ];
         }
@@ -893,6 +996,11 @@ async function showSelectionActions(provider, editor, explicitTarget) {
     items.push({ label: "Create Case", detail: "Create an investigation shell from current context", run: async () => createCaseFromContext(provider, targetEditor, target) }, { label: "Create Check", detail: "Create a code-adjacent review task", run: async () => createCheckFromSelection(provider, targetEditor, target) });
     if (mark) {
         items.push({
+            label: mark.is_dead_end ? "Remove dead-end mark" : "Mark as dead end",
+            detail: "Toggle dead-end flow indicator",
+            run: async () => toggleCurrentMarkDeadEnd(provider, target),
+        });
+        items.push({
             label: "Remove Mark",
             detail: "Delete the current mark and its direct relations",
             run: async () => removeCurrentMark(provider, target),
@@ -940,7 +1048,8 @@ async function maybeShowSelectionPopup(provider, editor) {
 }
 function registerMarkCommands(context, codeLensProvider, recentMarksPanel) {
     const markCommand = (command, kind) => {
-        context.subscriptions.push(vscode.commands.registerCommand(command, async (target) => {
+        context.subscriptions.push(vscode.commands.registerCommand(command, async (...args) => {
+            const target = selectionTargetFromCommandArgs(args);
             await createMark(kind, codeLensProvider, false, undefined, target);
             recentMarksPanel.refresh();
         }));
@@ -950,7 +1059,8 @@ function registerMarkCommands(context, codeLensProvider, recentMarksPanel) {
     markCommand("appsecWorkbench.markGuard", "GUARD");
     markCommand("appsecWorkbench.markTransform", "TRANSFORM");
     markCommand("appsecWorkbench.markNote", "NOTE");
-    context.subscriptions.push(vscode.commands.registerCommand("appsecWorkbench.markAny", async (target) => {
+    context.subscriptions.push(vscode.commands.registerCommand("appsecWorkbench.markAny", async (...args) => {
+        const target = selectionTargetFromCommandArgs(args);
         await createMark("NOTE", codeLensProvider, false, undefined, target);
         recentMarksPanel.refresh();
     }));
@@ -967,22 +1077,23 @@ function registerMarkCommands(context, codeLensProvider, recentMarksPanel) {
         }
         await rejectCandidate(candidate, codeLensProvider);
     }));
-    context.subscriptions.push(vscode.commands.registerCommand("appsecWorkbench.createCheckFromSelection", async (target) => createCheckFromSelection(codeLensProvider, undefined, target)));
-    context.subscriptions.push(vscode.commands.registerCommand("appsecWorkbench.attachEvidenceFromSelection", async (target) => attachEvidenceFromSelection(codeLensProvider, undefined, target)));
-    context.subscriptions.push(vscode.commands.registerCommand("appsecWorkbench.createCaseFromContext", async (target) => createCaseFromContext(codeLensProvider, undefined, target)));
-    context.subscriptions.push(vscode.commands.registerCommand("appsecWorkbench.removeCurrentMark", async (target) => removeCurrentMark(codeLensProvider, target)));
+    context.subscriptions.push(vscode.commands.registerCommand("appsecWorkbench.createCheckFromSelection", async (...args) => createCheckFromSelection(codeLensProvider, undefined, selectionTargetFromCommandArgs(args))));
+    context.subscriptions.push(vscode.commands.registerCommand("appsecWorkbench.attachEvidenceFromSelection", async (...args) => attachEvidenceFromSelection(codeLensProvider, undefined, selectionTargetFromCommandArgs(args))));
+    context.subscriptions.push(vscode.commands.registerCommand("appsecWorkbench.createCaseFromContext", async (...args) => createCaseFromContext(codeLensProvider, undefined, selectionTargetFromCommandArgs(args))));
+    context.subscriptions.push(vscode.commands.registerCommand("appsecWorkbench.removeCurrentMark", async (...args) => removeCurrentMark(codeLensProvider, selectionTargetFromCommandArgs(args))));
+    context.subscriptions.push(vscode.commands.registerCommand("appsecWorkbench.toggleMarkDeadEnd", async (...args) => toggleCurrentMarkDeadEnd(codeLensProvider, selectionTargetFromCommandArgs(args))));
     context.subscriptions.push(vscode.commands.registerCommand("appsecWorkbench.addCurrentMarkToActiveCase", async () => addCurrentMarkToActiveCase(codeLensProvider)));
     context.subscriptions.push(vscode.commands.registerCommand("appsecWorkbench.addCurrentCheckToActiveCase", async () => addCurrentCheckToActiveCase(codeLensProvider)));
     context.subscriptions.push(vscode.commands.registerCommand("appsecWorkbench.addRecentMarkToActiveCase", async (recentId) => addRecentMarkToActiveCase(codeLensProvider, recentId)));
     context.subscriptions.push(vscode.commands.registerCommand("appsecWorkbench.setCheckStatus", async (status) => setCheckStatus(codeLensProvider, status)));
     context.subscriptions.push(vscode.commands.registerCommand("appsecWorkbench.convertCheckToFinding", async () => convertFailedCheckToFinding(codeLensProvider)));
-    context.subscriptions.push(vscode.commands.registerCommand("appsecWorkbench.showRecentMarkActions", async (target) => showRecentMarkActions(codeLensProvider, target)));
+    context.subscriptions.push(vscode.commands.registerCommand("appsecWorkbench.showRecentMarkActions", async (...args) => showRecentMarkActions(codeLensProvider, selectionTargetFromCommandArgs(args))));
     context.subscriptions.push(vscode.commands.registerCommand("appsecWorkbench.applyRecentMarkAction", async (action, recentId, target) => applyRecentMarkAction(codeLensProvider, action, recentId, target)));
     context.subscriptions.push(vscode.commands.registerCommand("appsecWorkbench.dismissFollowUp", async () => {
         codeLensProvider.clearFollowUp();
         codeLensProvider.refresh();
     }));
-    context.subscriptions.push(vscode.commands.registerCommand("appsecWorkbench.showSelectionActions", async (target) => showSelectionActions(codeLensProvider, undefined, target)));
+    context.subscriptions.push(vscode.commands.registerCommand("appsecWorkbench.showSelectionActions", async (...args) => showSelectionActions(codeLensProvider, undefined, selectionTargetFromCommandArgs(args))));
     context.subscriptions.push(vscode.languages.registerCodeLensProvider([
         { scheme: "file" },
         { scheme: "vscode-remote" },

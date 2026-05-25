@@ -3,6 +3,8 @@ import * as vscode from "vscode";
 export type ActiveCaseState = {
   id: string;
   title: string;
+  assessmentId?: string;
+  assetId?: string;
 };
 
 const ACTIVE_CASE_STORAGE_KEY = "appsecWorkbench.activeCase";

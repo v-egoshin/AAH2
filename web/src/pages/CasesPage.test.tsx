@@ -18,6 +18,7 @@ const workbenchMocks = vi.hoisted(() => ({
   createRelation: vi.fn(),
   deleteRelation: vi.fn(),
   updateRelation: vi.fn(),
+  updateMark: vi.fn(),
   updateCase: vi.fn(),
 }));
 
@@ -35,6 +36,7 @@ vi.mock("../app/workbench", () => ({
       createRelation: workbenchMocks.createRelation,
       deleteRelation: workbenchMocks.deleteRelation,
       updateRelation: workbenchMocks.updateRelation,
+      updateMark: workbenchMocks.updateMark,
       updateCase: workbenchMocks.updateCase,
     },
     selectedAssessmentId: "assessment-1",
@@ -64,6 +66,14 @@ function renderIntoBody(node: React.ReactNode) {
 async function flushAsyncWork() {
   await act(async () => {
     await Promise.resolve();
+  });
+}
+
+async function waitForGraphLoaded(container: HTMLElement) {
+  await act(async () => {
+    await vi.waitFor(() => {
+      expect(container.querySelector(".case-tree-entity-label")).toBeTruthy();
+    }, { timeout: 3000 });
   });
 }
 
@@ -145,7 +155,7 @@ describe("CasesPage", () => {
 
     const view = renderIntoBody(
       <MemoryRouter
-        initialEntries={["/cases"]}
+        initialEntries={["/cases?selected=case-1"]}
         future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
       >
         <CasesPage />
@@ -153,17 +163,18 @@ describe("CasesPage", () => {
     );
 
     await flushAsyncWork();
+    await waitForGraphLoaded(view.container);
 
     const description = [...view.container.querySelectorAll(".case-tree-description")]
       .find((node) => node.textContent?.includes("Manual description"));
     expect(description).not.toBeUndefined();
     expect(view.container.textContent?.match(/Generated Check/g)?.length ?? 0).toBe(1);
 
-    const entityButton = [...view.container.querySelectorAll("button")]
+    const entityLabel = [...view.container.querySelectorAll(".case-tree-entity-label")]
       .find((node) => node.textContent?.includes("Import flow"));
-    expect(entityButton).not.toBeNull();
+    expect(entityLabel).not.toBeUndefined();
 
-    const row = entityButton?.closest(".relation-tree-hit");
+    const row = entityLabel?.closest(".relation-tree-hit");
     expect(row).not.toBeNull();
 
     act(() => {

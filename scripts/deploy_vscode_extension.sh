@@ -24,7 +24,7 @@ echo "Building VS Code extension..."
 if [[ ! -d "$EXT_DIR/node_modules" ]]; then
   (cd "$EXT_DIR" && npm ci)
 fi
-(cd "$EXT_DIR" && npm run build)
+(cd "$EXT_DIR" && npm run build:all)
 
 echo "Deploying to $TARGET_DIR"
 mkdir -p "$TARGET_ROOT"

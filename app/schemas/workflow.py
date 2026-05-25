@@ -49,6 +49,7 @@ class MarkUpdate(BaseModel):
     title: str | None = None
     note: str | None = None
     status: MarkStatus | None = None
+    is_dead_end: bool | None = None
 
 
 class CheckCreate(BaseModel):

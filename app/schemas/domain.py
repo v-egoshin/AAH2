@@ -82,6 +82,7 @@ class MarkRead(BaseModel):
     confidence: Confidence = Confidence.UNKNOWN
     status: MarkStatus = MarkStatus.ACTIVE
     source: SourceType = SourceType.OTHER
+    is_dead_end: bool = False
     created_at: datetime = Field(default_factory=utcnow)
 
 

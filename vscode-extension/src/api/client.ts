@@ -39,6 +39,7 @@ export type ReviewEntity = {
   severity?: string;
   confidence?: string;
   note?: string;
+  is_dead_end?: boolean;
   reason?: string;
   source?: string;
   created_at?: string;
@@ -136,11 +137,11 @@ export class WorkbenchApiClient {
     return null;
   }
 
-  private async listAssets(assessmentId: string): Promise<AssetRecord[]> {
+  async listAssets(assessmentId: string): Promise<AssetRecord[]> {
     return this.request(`/assessments/${assessmentId}/assets`, { method: "GET", headers: this.headers() });
   }
 
-  private async resolveAssessmentId(): Promise<string> {
+  async resolveAssessmentId(): Promise<string> {
     const raw = this.cfg.assessmentId.trim();
     if (!raw) {
       throw new Error("Set appsecWorkbench.assessmentId first");
@@ -163,7 +164,7 @@ export class WorkbenchApiClient {
     throw new Error(`Assessment not found for setting: ${raw}`);
   }
 
-  private async resolveAssetId(assessmentId: string): Promise<string> {
+  async resolveAssetId(assessmentId: string): Promise<string> {
     const raw = this.cfg.assetId.trim();
     if (!raw) {
       return "";
@@ -209,11 +210,55 @@ export class WorkbenchApiClient {
     });
   }
 
+  async updateAssessment(assessmentId: string, payload: Record<string, unknown>) {
+    return this.request(`/assessments/${assessmentId}`, {
+      method: "PATCH",
+      headers: this.headers(),
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async deleteAssessment(_assessmentId: string) {
+    throw new Error("Deleting assessments is not supported by the API.");
+  }
+
+  async resolveIds(): Promise<ResolvedConfig> {
+    return this.getResolvedConfig();
+  }
+
+  async createAsset(assessmentId: string, payload: Record<string, unknown>) {
+    return this.request(`/assessments/${assessmentId}/assets`, {
+      method: "POST",
+      headers: this.headers(),
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async updateAsset(assetId: string, payload: Record<string, unknown>) {
+    return this.request(`/assets/${assetId}`, {
+      method: "PATCH",
+      headers: this.headers(),
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async deleteAsset(_assetId: string) {
+    throw new Error("Deleting assets is not supported by the API.");
+  }
+
   async listCases() {
     const resolved = await this.getResolvedConfig();
     return this.request(`/assessments/${resolved.assessmentId}/cases`, {
       method: "GET",
       headers: this.headers(),
+    });
+  }
+
+  async updateCase(caseId: string, payload: Record<string, unknown>) {
+    return this.request(`/cases/${caseId}`, {
+      method: "PATCH",
+      headers: this.headers(),
+      body: JSON.stringify(payload),
     });
   }
 
@@ -232,6 +277,14 @@ export class WorkbenchApiClient {
       method: "POST",
       headers: this.headers(),
       body: JSON.stringify({ kind, ...payload }),
+    });
+  }
+
+  async listMarks() {
+    const resolved = await this.getResolvedConfig();
+    return this.request(`/assessments/${resolved.assessmentId}/marks`, {
+      method: "GET",
+      headers: this.headers(),
     });
   }
 
@@ -275,6 +328,14 @@ export class WorkbenchApiClient {
     });
   }
 
+  async listChecks() {
+    const resolved = await this.getResolvedConfig();
+    return this.request(`/assessments/${resolved.assessmentId}/checks`, {
+      method: "GET",
+      headers: this.headers(),
+    });
+  }
+
   async createEvidence(payload: Record<string, unknown>) {
     const resolved = await this.getResolvedConfig();
     return this.request(`/assessments/${resolved.assessmentId}/evidence`, {
@@ -300,6 +361,13 @@ export class WorkbenchApiClient {
     });
   }
 
+  async deleteCheck(checkId: string) {
+    return this.request(`/checks/${checkId}`, {
+      method: "DELETE",
+      headers: this.headers(),
+    });
+  }
+
   async convertCheckToFinding(checkId: string, payload: Record<string, unknown>) {
     return this.request(`/checks/${checkId}/convert-to-finding`, {
       method: "POST",
@@ -317,12 +385,59 @@ export class WorkbenchApiClient {
     });
   }
 
+  async listFindings() {
+    const resolved = await this.getResolvedConfig();
+    return this.request(`/assessments/${resolved.assessmentId}/findings`, {
+      method: "GET",
+      headers: this.headers(),
+    });
+  }
+
+  async listObjects() {
+    const resolved = await this.getResolvedConfig();
+    return this.request(`/assessments/${resolved.assessmentId}/objects`, {
+      method: "GET",
+      headers: this.headers(),
+    });
+  }
+
+  async listCandidates() {
+    const resolved = await this.getResolvedConfig();
+    return this.request(`/assessments/${resolved.assessmentId}/candidates`, {
+      method: "GET",
+      headers: this.headers(),
+    });
+  }
+
   async createRelation(payload: Record<string, unknown>) {
     const resolved = await this.getResolvedConfig();
     return this.request(`/assessments/${resolved.assessmentId}/relations`, {
       method: "POST",
       headers: this.headers(),
       body: JSON.stringify(payload),
+    });
+  }
+
+  async getRelations() {
+    const resolved = await this.getResolvedConfig();
+    return this.request(`/assessments/${resolved.assessmentId}/relations`, {
+      method: "GET",
+      headers: this.headers(),
+    });
+  }
+
+  async updateRelation(relationId: string, payload: Record<string, unknown>) {
+    return this.request(`/relations/${relationId}`, {
+      method: "PATCH",
+      headers: this.headers(),
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async deleteRelation(relationId: string) {
+    return this.request(`/relations/${relationId}`, {
+      method: "DELETE",
+      headers: this.headers(),
     });
   }
 

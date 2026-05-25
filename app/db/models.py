@@ -96,6 +96,7 @@ class MarkORM(Base):
     confidence: Mapped[str] = mapped_column(String(32), default="UNKNOWN")
     status: Mapped[str] = mapped_column(String(32), default="ACTIVE")
     source: Mapped[str] = mapped_column(String(64), default="OTHER")
+    is_dead_end: Mapped[bool] = mapped_column(default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 

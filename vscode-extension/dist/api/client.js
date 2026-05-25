@@ -152,11 +152,48 @@ class WorkbenchApiClient {
             body: JSON.stringify(payload),
         });
     }
+    async updateAssessment(assessmentId, payload) {
+        return this.request(`/assessments/${assessmentId}`, {
+            method: "PATCH",
+            headers: this.headers(),
+            body: JSON.stringify(payload),
+        });
+    }
+    async deleteAssessment(_assessmentId) {
+        throw new Error("Deleting assessments is not supported by the API.");
+    }
+    async resolveIds() {
+        return this.getResolvedConfig();
+    }
+    async createAsset(assessmentId, payload) {
+        return this.request(`/assessments/${assessmentId}/assets`, {
+            method: "POST",
+            headers: this.headers(),
+            body: JSON.stringify(payload),
+        });
+    }
+    async updateAsset(assetId, payload) {
+        return this.request(`/assets/${assetId}`, {
+            method: "PATCH",
+            headers: this.headers(),
+            body: JSON.stringify(payload),
+        });
+    }
+    async deleteAsset(_assetId) {
+        throw new Error("Deleting assets is not supported by the API.");
+    }
     async listCases() {
         const resolved = await this.getResolvedConfig();
         return this.request(`/assessments/${resolved.assessmentId}/cases`, {
             method: "GET",
             headers: this.headers(),
+        });
+    }
+    async updateCase(caseId, payload) {
+        return this.request(`/cases/${caseId}`, {
+            method: "PATCH",
+            headers: this.headers(),
+            body: JSON.stringify(payload),
         });
     }
     async getReviewContext(file, line) {
@@ -173,6 +210,13 @@ class WorkbenchApiClient {
             method: "POST",
             headers: this.headers(),
             body: JSON.stringify({ kind, ...payload }),
+        });
+    }
+    async listMarks() {
+        const resolved = await this.getResolvedConfig();
+        return this.request(`/assessments/${resolved.assessmentId}/marks`, {
+            method: "GET",
+            headers: this.headers(),
         });
     }
     async deleteMark(markId) {
@@ -210,6 +254,13 @@ class WorkbenchApiClient {
             body: JSON.stringify(payload),
         });
     }
+    async listChecks() {
+        const resolved = await this.getResolvedConfig();
+        return this.request(`/assessments/${resolved.assessmentId}/checks`, {
+            method: "GET",
+            headers: this.headers(),
+        });
+    }
     async createEvidence(payload) {
         const resolved = await this.getResolvedConfig();
         return this.request(`/assessments/${resolved.assessmentId}/evidence`, {
@@ -232,6 +283,12 @@ class WorkbenchApiClient {
             body: JSON.stringify(payload),
         });
     }
+    async deleteCheck(checkId) {
+        return this.request(`/checks/${checkId}`, {
+            method: "DELETE",
+            headers: this.headers(),
+        });
+    }
     async convertCheckToFinding(checkId, payload) {
         return this.request(`/checks/${checkId}/convert-to-finding`, {
             method: "POST",
@@ -247,12 +304,53 @@ class WorkbenchApiClient {
             body: JSON.stringify(payload),
         });
     }
+    async listFindings() {
+        const resolved = await this.getResolvedConfig();
+        return this.request(`/assessments/${resolved.assessmentId}/findings`, {
+            method: "GET",
+            headers: this.headers(),
+        });
+    }
+    async listObjects() {
+        const resolved = await this.getResolvedConfig();
+        return this.request(`/assessments/${resolved.assessmentId}/objects`, {
+            method: "GET",
+            headers: this.headers(),
+        });
+    }
+    async listCandidates() {
+        const resolved = await this.getResolvedConfig();
+        return this.request(`/assessments/${resolved.assessmentId}/candidates`, {
+            method: "GET",
+            headers: this.headers(),
+        });
+    }
     async createRelation(payload) {
         const resolved = await this.getResolvedConfig();
         return this.request(`/assessments/${resolved.assessmentId}/relations`, {
             method: "POST",
             headers: this.headers(),
             body: JSON.stringify(payload),
+        });
+    }
+    async getRelations() {
+        const resolved = await this.getResolvedConfig();
+        return this.request(`/assessments/${resolved.assessmentId}/relations`, {
+            method: "GET",
+            headers: this.headers(),
+        });
+    }
+    async updateRelation(relationId, payload) {
+        return this.request(`/relations/${relationId}`, {
+            method: "PATCH",
+            headers: this.headers(),
+            body: JSON.stringify(payload),
+        });
+    }
+    async deleteRelation(relationId) {
+        return this.request(`/relations/${relationId}`, {
+            method: "DELETE",
+            headers: this.headers(),
         });
     }
     async updateObject(objectId, payload) {

@@ -43,7 +43,9 @@ const log_1 = require("./log");
 const assessmentState_1 = require("./state/assessmentState");
 const activeCase_1 = require("./state/activeCase");
 const recentMarks_1 = require("./state/recentMarks");
+const checks2Panel_1 = require("./views/checks2Panel");
 const contextPanel_1 = require("./views/contextPanel");
+const linkedEntitiesPanel_1 = require("./views/linkedEntitiesPanel");
 const markDecorations_1 = require("./views/markDecorations");
 function parseEntityTarget(entity) {
     const locator = entity.locator || "";
@@ -62,6 +64,10 @@ function activate(context) {
     (0, activeCase_1.configureActiveCaseStorage)(context.workspaceState);
     const panel = new contextPanel_1.ContextPanel();
     panel.register(context);
+    const checksPanel = new checks2Panel_1.Checks2Panel(context.extensionUri);
+    checksPanel.register(context);
+    const linkedEntitiesPanel = new linkedEntitiesPanel_1.LinkedEntitiesPanel(context.extensionUri);
+    linkedEntitiesPanel.register(context);
     const recentMarksPanel = new recentMarks_1.RecentMarksPanel();
     const markDecorations = new markDecorations_1.MarkDecorations(context);
     context.subscriptions.push({ dispose: () => markDecorations.dispose() });
@@ -130,6 +136,8 @@ function activate(context) {
         await runRefresh(true);
     };
     context.subscriptions.push(vscode.commands.registerCommand("appsecWorkbench.refreshContext", refresh));
+    context.subscriptions.push(vscode.commands.registerCommand("appsecWorkbench.refreshLinkedEntities", () => linkedEntitiesPanel.refreshConfig()));
+    context.subscriptions.push(vscode.commands.registerCommand("appsecWorkbench.selectCheckInChecks", (checkId) => checksPanel.selectCheck(checkId)));
     context.subscriptions.push(vscode.commands.registerCommand("appsecWorkbench.showLogs", () => (0, log_1.showLogs)()));
     context.subscriptions.push(vscode.commands.registerCommand("appsecWorkbench.setRecentMarkFilter", async () => {
         const value = await vscode.window.showInputBox({

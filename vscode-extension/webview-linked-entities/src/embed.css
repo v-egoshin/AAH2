@@ -1,0 +1,402 @@
+html {
+  background: var(--vscode-sideBar-background);
+  overflow-x: hidden;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: hidden;
+  box-sizing: border-box;
+}
+
+body.appsec-linked-entities-webview {
+  background: var(--vscode-sideBar-background);
+  color: var(--vscode-sideBar-foreground);
+  font-family: var(--vscode-font-family);
+  font-size: var(--vscode-font-size);
+
+  --app-bg: var(--vscode-sideBar-background);
+  --surface: var(--vscode-sideBar-background);
+  --surface-raised: var(--vscode-input-background);
+  --surface-muted: var(--vscode-input-background);
+  --border: var(--vscode-widget-border, var(--vscode-panel-border));
+  --border-strong: var(--vscode-focusBorder);
+  --text: var(--vscode-foreground);
+  --muted: var(--vscode-descriptionForeground);
+  --primary: var(--vscode-textLink-foreground);
+  --primary-hover: var(--vscode-textLink-activeForeground);
+  --primary-soft: var(--vscode-list-hoverBackground);
+  --danger: var(--vscode-errorForeground);
+  --danger-soft: var(--vscode-inputValidation-errorBackground);
+  --warning: var(--vscode-editorWarning-foreground);
+  --warning-soft: var(--vscode-inputValidation-warningBackground);
+}
+
+body.appsec-linked-entities-webview input,
+body.appsec-linked-entities-webview select,
+body.appsec-linked-entities-webview textarea {
+  background: var(--vscode-input-background);
+  color: var(--vscode-input-foreground);
+  border-color: var(--vscode-input-border, var(--vscode-widget-border));
+}
+
+body.appsec-linked-entities-webview input:focus,
+body.appsec-linked-entities-webview select:focus,
+body.appsec-linked-entities-webview textarea:focus {
+  border-color: var(--vscode-focusBorder);
+  box-shadow: none;
+}
+
+body.appsec-linked-entities-webview .tree-expander {
+  background: var(--vscode-sideBar-background);
+  border-color: var(--vscode-widget-border, var(--vscode-descriptionForeground));
+  color: var(--vscode-foreground);
+}
+
+body.appsec-linked-entities-webview .tree-expander.is-placeholder {
+  background: transparent;
+  border-color: transparent;
+}
+
+body.appsec-linked-entities-webview .relation-tree-children {
+  border-left-color: var(--vscode-widget-border, var(--vscode-descriptionForeground));
+}
+
+body.appsec-linked-entities-webview .relation-tree-line.has-parent::before {
+  border-top-color: var(--vscode-widget-border, var(--vscode-descriptionForeground));
+}
+
+body.appsec-linked-entities-webview .case-tree-entity-label {
+  color: var(--vscode-foreground);
+}
+
+body.appsec-linked-entities-webview .case-tree-row-button.is-active .case-tree-entity-label {
+  color: var(--vscode-foreground);
+}
+
+body.appsec-linked-entities-webview .relation-pill {
+  background: transparent;
+  color: var(--vscode-descriptionForeground);
+  border: 1px solid var(--vscode-widget-border, var(--vscode-descriptionForeground));
+}
+
+body.appsec-linked-entities-webview .case-tree-original-label {
+  color: var(--vscode-descriptionForeground);
+}
+
+body.appsec-linked-entities-webview .case-tree-description,
+body.appsec-linked-entities-webview .case-tree-detail-description,
+body.appsec-linked-entities-webview .tree-linked-cases {
+  color: var(--vscode-descriptionForeground);
+}
+
+body.appsec-linked-entities-webview .code-block.case-tree-code,
+body.appsec-linked-entities-webview pre.code-block.case-tree-code {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  margin: 0;
+  white-space: pre;
+  overflow-x: auto;
+  overflow-y: hidden;
+  word-break: normal;
+  background: var(--vscode-textCodeBlock-background);
+  color: var(--vscode-editor-foreground);
+  border: 1px solid var(--vscode-widget-border, transparent);
+  box-sizing: border-box;
+}
+
+body.appsec-linked-entities-webview .case-tree-detail-grid,
+body.appsec-linked-entities-webview .case-tree-detail-grid-embed {
+  grid-template-columns: 1fr;
+  gap: 8px;
+  margin-left: 0;
+  padding-left: 8px;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+body.appsec-linked-entities-webview .case-tree-snippet {
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+body.appsec-linked-entities-webview .relation-tree-root,
+body.appsec-linked-entities-webview .relation-tree-embed {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: hidden;
+  box-sizing: border-box;
+}
+
+body.appsec-linked-entities-webview .relation-tree-node {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+body.appsec-linked-entities-webview .relation-tree-line,
+body.appsec-linked-entities-webview .relation-tree-hit,
+body.appsec-linked-entities-webview .case-tree-row-main {
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+body.appsec-linked-entities-webview .code-block mark {
+  background: var(--vscode-editor-findMatchHighlightBackground);
+  color: inherit;
+}
+
+body.appsec-linked-entities-webview .relation-tree-hit.is-drop-target {
+  background: var(--vscode-list-hoverBackground);
+  outline: 1px solid var(--vscode-focusBorder);
+}
+
+body.appsec-linked-entities-webview .relation-tree-hit.is-current-editor-entity {
+  background: var(--vscode-editor-lineHighlightBackground, var(--vscode-list-hoverBackground));
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: -1px;
+}
+
+body.appsec-linked-entities-webview .relation-tree-hit.is-current-editor-entity .case-tree-entity-label {
+  color: var(--vscode-editor-foreground);
+  font-weight: 700;
+}
+
+body.appsec-linked-entities-webview .relation-tree-hit.is-keyboard-focused {
+  background: var(--vscode-list-hoverBackground);
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: -1px;
+}
+
+body.appsec-linked-entities-webview .entity-kind-icon {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  display: block;
+}
+
+body.appsec-linked-entities-webview .case-tree-entity-label.is-navigable {
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--vscode-textLink-foreground) 45%, transparent);
+  text-underline-offset: 2px;
+}
+
+body.appsec-linked-entities-webview .case-tree-entity-label.is-navigable:hover {
+  color: var(--vscode-textLink-activeForeground);
+}
+
+body.appsec-linked-entities-webview .relation-tree-root:focus {
+  outline: none;
+}
+
+body.appsec-linked-entities-webview .relation-tree-hit {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+body.appsec-linked-entities-webview .relation-drag-handle {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  padding: 0 2px;
+  color: var(--vscode-descriptionForeground);
+  cursor: grab;
+  user-select: none;
+  letter-spacing: -0.15em;
+  font-size: 10px;
+  line-height: 1;
+}
+
+body.appsec-linked-entities-webview .relation-drag-handle:active {
+  cursor: grabbing;
+}
+
+body.appsec-linked-entities-webview .case-tree-row-button {
+  -webkit-user-drag: none;
+}
+
+body.appsec-linked-entities-webview button.locator-link {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  color: var(--vscode-textLink-foreground);
+}
+
+body.appsec-linked-entities-webview button.locator-link:hover {
+  color: var(--vscode-textLink-activeForeground);
+}
+
+body.appsec-linked-entities-webview .locator-file-icon {
+  color: var(--vscode-foreground);
+}
+
+body.appsec-linked-entities-webview .context-menu {
+  background: var(--vscode-menu-background);
+  border-color: var(--vscode-menu-border, var(--vscode-widget-border));
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.36);
+}
+
+body.appsec-linked-entities-webview .context-menu-item {
+  color: var(--vscode-menu-foreground);
+}
+
+body.appsec-linked-entities-webview .context-menu-item:hover,
+body.appsec-linked-entities-webview .context-menu-item.is-active {
+  background: var(--vscode-menu-selectionBackground);
+  color: var(--vscode-menu-selectionForeground);
+}
+
+body.appsec-linked-entities-webview .context-menu-item.is-danger {
+  color: var(--vscode-errorForeground);
+}
+
+body.appsec-linked-entities-webview .context-menu-separator {
+  background: var(--vscode-menu-separatorBackground, var(--vscode-widget-border));
+}
+
+body.appsec-linked-entities-webview .context-menu-item-icon,
+body.appsec-linked-entities-webview .context-submenu-caret {
+  color: var(--vscode-descriptionForeground);
+}
+
+.case-linked-entities-embed {
+  padding: 8px 10px 12px;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: hidden;
+  box-sizing: border-box;
+}
+
+.case-picker-field {
+  display: grid;
+  gap: 5px;
+  margin-bottom: 6px;
+  padding: 6px 8px 0;
+  box-sizing: border-box;
+}
+
+.case-picker-field select {
+  width: 150px;
+  box-sizing: border-box;
+  height: 24px;
+  padding: 2px 6px;
+  border-radius: 3px;
+}
+
+.case-picker-row {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.case-status-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.case-status-button {
+  height: 24px;
+  padding: 0 7px;
+  color: var(--vscode-button-secondaryForeground);
+  background: var(--vscode-button-secondaryBackground);
+  border: 1px solid var(--vscode-button-border, transparent);
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.case-status-button.is-active {
+  color: var(--vscode-button-foreground);
+  background: var(--vscode-button-background);
+}
+
+.case-status-button:disabled {
+  opacity: .45;
+  cursor: default;
+}
+
+.case-scope-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+  color: var(--vscode-descriptionForeground);
+  font-size: 11px;
+}
+
+.case-scope-toggle input {
+  width: auto;
+  margin: 0;
+}
+
+.case-settings-button {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  color: var(--vscode-icon-foreground);
+  background: var(--vscode-button-secondaryBackground);
+  border: 1px solid var(--vscode-button-border, var(--vscode-widget-border));
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.case-settings-popover {
+  display: grid;
+  gap: 6px;
+  padding: 8px;
+  background: var(--vscode-input-background);
+  border: 1px solid var(--vscode-widget-border, var(--vscode-panel-border));
+  border-radius: 4px;
+}
+
+.case-settings-title {
+  font-weight: 600;
+  color: var(--vscode-foreground);
+}
+
+.case-settings-description {
+  color: var(--vscode-descriptionForeground);
+  font-size: 11px;
+}
+
+.case-picker-graph-error {
+  margin: 0 10px 8px;
+}
+
+.case-linked-entities-embed .resource-card,
+.case-linked-entities-embed .resource-card-header {
+  display: none;
+}
+
+.case-linked-entities-embed .error-text {
+  color: var(--vscode-errorForeground);
+  margin-bottom: 8px;
+}
+
+.case-linked-entities-embed .relation-pill,
+.case-linked-entities-embed .small,
+.case-linked-entities-embed .case-tree-description {
+  color: var(--vscode-descriptionForeground);
+}
+
+.case-linked-entities-embed .case-tree-row-button {
+  color: var(--vscode-foreground);
+}
