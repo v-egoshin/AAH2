@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { requestHostMutation } from "./hostApi";
 import { vscode } from "./vscode";
 
 type CasePickerProps = {
@@ -16,6 +17,17 @@ const CASE_STATUSES = [
 
 export function CasePicker({ selectedId, selectedStatus, caseScopedDecorations }: CasePickerProps) {
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const deleteSelectedCase = async () => {
+    if (!selectedId || !window.confirm("Delete this case and its Linked Entities relations?")) {
+      return;
+    }
+    try {
+      await requestHostMutation("deleteCase", { caseId: selectedId });
+      setSettingsOpen(false);
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : String(error));
+    }
+  };
   return (
     <div className="case-picker-field">
       <div className="case-picker-row">
@@ -61,6 +73,16 @@ export function CasePicker({ selectedId, selectedStatus, caseScopedDecorations }
           </label>
           <div className="case-settings-description">
             Show editor decorations only for the selected case.
+          </div>
+          <div className="case-settings-danger">
+            <button
+              className="case-settings-delete"
+              type="button"
+              disabled={!selectedId}
+              onClick={() => void deleteSelectedCase()}
+            >
+              Delete case
+            </button>
           </div>
         </div>
       ) : null}

@@ -18,12 +18,14 @@ const emptyConfig: EmbedWorkbenchConfig = {
   caseScopedDecorations: false,
   activeLocator: null,
   projectBasePaths: {},
+  workspaceRoot: "",
 };
 
 const WEBVIEW_BODY_CLASS = "appsec-linked-entities-webview";
 
 export function App() {
   const [config, setConfig] = useState<EmbedWorkbenchConfig>(emptyConfig);
+  const [actionError, setActionError] = useState<string | null>(null);
   const panelFocus = useSidebarPanelFocus(".case-linked-entities-embed-root");
 
   useEffect(() => {
@@ -38,6 +40,7 @@ export function App() {
       const message = event.data as { type?: string; config?: EmbedWorkbenchConfig; activeLocator?: EmbedWorkbenchConfig["activeLocator"]; caseScopedDecorations?: boolean };
       if (message.type === "config" && message.config) {
         setConfig(message.config);
+        setActionError(null);
       }
       if (message.type === "activeLocator") {
         setConfig((current) => ({ ...current, activeLocator: message.activeLocator ?? null }));
@@ -83,6 +86,9 @@ export function App() {
         {config.graphError ? (
           <p className="case-picker-graph-error error-text">{config.graphError}</p>
         ) : null}
+        {actionError ? (
+          <p className="case-picker-graph-error error-text">{actionError}</p>
+        ) : null}
         <CaseLinkedEntitiesPanel
           caseId={config.caseId}
           refreshToken={config.configVersion}
@@ -92,8 +98,18 @@ export function App() {
           onRequestReload={() => {
             vscode.postMessage({ type: "reloadGraph" });
           }}
-          onOpenLocator={(locator, assetId) => {
-            vscode.postMessage({ type: "openLocator", locator, assetId: assetId ?? null });
+          onOpenLocator={(target, assetId) => {
+            if (typeof target === "string") {
+              vscode.postMessage({ type: "openLocator", locator: target, assetId: assetId ?? null });
+              return;
+            }
+            vscode.postMessage({
+              type: "openLocator",
+              filePath: target.filePath,
+              line: target.line,
+              column: target.column,
+              assetId: assetId ?? null,
+            });
           }}
           activeLocator={config.activeLocator ?? null}
           onGraphMutated={() => {
@@ -103,6 +119,7 @@ export function App() {
           onSelectCheck={(checkId) => {
             vscode.postMessage({ type: "selectCheck", id: checkId });
           }}
+          onError={(message) => setActionError(message)}
         />
       </div>
     </EmbedWorkbenchProvider>

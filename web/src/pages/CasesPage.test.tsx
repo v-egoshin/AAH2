@@ -40,6 +40,9 @@ vi.mock("../app/workbench", () => ({
       updateCase: workbenchMocks.updateCase,
     },
     selectedAssessmentId: "assessment-1",
+    selectedAssetId: "asset-1",
+    getProjectBasePathForAsset: () => "",
+    getWorkspaceRoot: () => "",
   }),
 }));
 

@@ -820,17 +820,39 @@ a { color: inherit; }
 }
 .entity-dead-end-badge {
   flex: 0 0 auto;
-  width: 12px;
-  height: 12px;
+  width: 14px;
+  height: 14px;
   display: block;
-  opacity: 0.85;
+  opacity: 1;
 }
 .entity-dead-end-badge.is-inherited {
-  opacity: 0.55;
+  opacity: 0.68;
 }
 .case-tree-entity-label.is-snippet-toggle,
-.case-tree-entity-label.is-navigable {
+.case-tree-entity-label.is-navigable,
+.relation-pill.is-pill-action.is-snippet-toggle,
+.relation-pill.is-pill-action.is-navigable {
   cursor: pointer;
+}
+.case-tree-name-separator {
+  color: #69778b;
+}
+.case-tree-original-label {
+  color: #4a5e76;
+}
+.case-tree-row-button:hover .case-tree-entity-label.is-navigable,
+.case-tree-row-button:hover .case-tree-entity-label.is-snippet-toggle {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.relation-pill.is-pill-action.is-navigable:hover,
+.relation-pill.is-pill-action.is-snippet-toggle:hover {
+  border-color: #245dc1;
+  color: #245dc1;
+}
+.case-tree-row-button.is-active .relation-pill.is-snippet-toggle {
+  border-color: #1f52a8;
+  color: #1f52a8;
 }
 .case-tree-row-button {
   display: inline-flex;
@@ -853,6 +875,13 @@ a { color: inherit; }
   gap: 4px;
   min-width: 0;
 }
+.case-tree-row-main.is-primary-action {
+  cursor: pointer;
+}
+.case-tree-row-main.is-primary-action:hover .case-tree-entity-label {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
 .case-tree-description {
   flex: 1 1 280px;
   min-width: 180px;
@@ -866,7 +895,6 @@ a { color: inherit; }
   color: #245dc1;
   text-decoration: none;
 }
-.case-tree-row-button:hover .case-tree-entity-label { text-decoration: underline; text-underline-offset: 2px; }
 .relation-tree-line.has-parent::before {
   content: "";
   position: absolute;

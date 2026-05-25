@@ -6,7 +6,8 @@ export type HostMutationAction =
   | "updateDisplayName"
   | "deleteRelation"
   | "createCheckFromNode"
-  | "toggleDeadEnd";
+  | "toggleDeadEnd"
+  | "deleteCase";
 
 type PendingMutation = {
   resolve: () => void;

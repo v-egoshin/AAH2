@@ -93,6 +93,7 @@ export type CheckRecord = {
 export type CaseRecord = {
   id: string;
   assessment_id: string;
+  asset_id: string;
   title: string;
   description?: string;
   status: string;
@@ -194,6 +195,10 @@ export class ApiClient {
     return this.request<Assessment>(`/assessments/${assessmentId}`, { method: "PATCH", body: JSON.stringify(payload) });
   }
 
+  deleteAssessment(assessmentId: string) {
+    return this.request<JsonObject>(`/assessments/${assessmentId}`, { method: "DELETE" });
+  }
+
   getAssets(assessmentId: string) {
     return this.request<Asset[]>(`/assessments/${assessmentId}/assets`);
   }
@@ -204,6 +209,10 @@ export class ApiClient {
 
   updateAsset(assetId: string, payload: JsonObject) {
     return this.request<Asset>(`/assets/${assetId}`, { method: "PATCH", body: JSON.stringify(payload) });
+  }
+
+  deleteAsset(assetId: string) {
+    return this.request<JsonObject>(`/assets/${assetId}`, { method: "DELETE" });
   }
 
   getImports(assessmentId: string) {
@@ -292,6 +301,10 @@ export class ApiClient {
 
   updateCase(caseId: string, payload: JsonObject) {
     return this.request<CaseRecord>(`/cases/${caseId}`, { method: "PATCH", body: JSON.stringify(payload) });
+  }
+
+  deleteCase(caseId: string) {
+    return this.request<JsonObject>(`/cases/${caseId}`, { method: "DELETE" });
   }
 
   getFindings(assessmentId: string) {

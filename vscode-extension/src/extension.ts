@@ -3,13 +3,15 @@ import { registerAssessmentCommands } from "./commands/assessment";
 import { getSelectionTarget, registerMarkCommands, SelectionActionCodeLensProvider } from "./commands/mark";
 import { ReviewEntity, WorkbenchApiClient } from "./api/client";
 import { log, showLogs } from "./log";
-import { readState } from "./state/assessmentState";
+import { configureAssessmentStateStorage, readState } from "./state/assessmentState";
 import { configureActiveCaseStorage } from "./state/activeCase";
 import { RecentMarksPanel } from "./state/recentMarks";
 import { Checks2Panel } from "./views/checks2Panel";
 import { ContextPanel } from "./views/contextPanel";
 import { LinkedEntitiesPanel } from "./views/linkedEntitiesPanel";
+import { relativeFilePathFromUri } from "./lib/assetPath";
 import { MarkDecorations } from "./views/markDecorations";
+import { disposeMarkDescriptionEditor, initializeMarkDescriptionController } from "./views/markDescriptionWidget";
 
 function parseEntityTarget(entity: ReviewEntity) {
   const locator = entity.locator || "";
@@ -26,6 +28,7 @@ function parseEntityTarget(entity: ReviewEntity) {
 
 export function activate(context: vscode.ExtensionContext) {
   log("Extension activated");
+  configureAssessmentStateStorage(context.workspaceState);
   configureActiveCaseStorage(context.workspaceState);
   const panel = new ContextPanel();
   panel.register(context);
@@ -38,6 +41,9 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push({ dispose: () => markDecorations.dispose() });
 
   const codeLensProvider = new SelectionActionCodeLensProvider();
+
+  initializeMarkDescriptionController(context);
+  context.subscriptions.push({ dispose: () => disposeMarkDescriptionEditor() });
 
   registerAssessmentCommands(context);
   registerMarkCommands(context, codeLensProvider, recentMarksPanel);
@@ -58,7 +64,7 @@ export function activate(context: vscode.ExtensionContext) {
       log("Refresh skipped: assessmentId is empty");
       return;
     }
-    const file = vscode.workspace.asRelativePath(editor.document.uri);
+    const file = relativeFilePathFromUri(editor.document.uri);
     const line = editor.selection.active.line + 1;
     const refreshKey = `${file}:${line}`;
     if (!force && (refreshKey === inFlightRefreshKey || refreshKey === lastAppliedRefreshKey)) {

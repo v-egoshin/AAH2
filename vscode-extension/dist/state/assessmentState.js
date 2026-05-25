@@ -33,16 +33,25 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.configureAssessmentStateStorage = configureAssessmentStateStorage;
+exports.updateAssessmentState = updateAssessmentState;
 exports.readState = readState;
 const vscode = __importStar(require("vscode"));
+let workspaceState;
+function configureAssessmentStateStorage(state) {
+    workspaceState = state;
+}
+async function updateAssessmentState(values) {
+    await Promise.all(Object.entries(values).map(([key, value]) => workspaceState?.update(key, value)));
+}
 function readState() {
     const cfg = vscode.workspace.getConfiguration("appsecWorkbench");
     return {
         apiBaseUrl: cfg.get("apiBaseUrl", "http://localhost:8000/api"),
-        assessmentId: cfg.get("assessmentId", ""),
-        assetId: cfg.get("assetId", ""),
-        authToken: cfg.get("authToken", ""),
-        selectionActionPopupEnabled: cfg.get("selectionActionPopupEnabled", true),
+        assessmentId: workspaceState?.get("assessmentId", "") ?? "",
+        assetId: workspaceState?.get("assetId", "") ?? "",
+        authToken: workspaceState?.get("authToken", "") ?? "",
+        selectionActionPopupEnabled: workspaceState?.get("selectionActionPopupEnabled", true) ?? true,
         debugLogs: cfg.get("debugLogs", false),
     };
 }

@@ -36,7 +36,10 @@
     "onCommand:appsecWorkbench.dismissFollowUp",
     "onCommand:appsecWorkbench.openEntitySource",
     "onCommand:appsecWorkbench.acceptCandidate",
-    "onCommand:appsecWorkbench.rejectCandidate"
+    "onCommand:appsecWorkbench.rejectCandidate",
+    "onCommand:appsecWorkbench.setMarkDescriptionFromSelection",
+    "onCommand:appsecWorkbench.saveMarkDescription",
+    "onCommand:appsecWorkbench.cancelMarkDescription"
   ],
   "contributes": {
     "viewsContainers": {
@@ -73,31 +76,6 @@
         "appsecWorkbench.apiBaseUrl": {
           "type": "string",
           "default": "http://localhost:8000/api"
-        },
-        "appsecWorkbench.assessmentId": {
-          "type": "string",
-          "default": "",
-          "description": "Assessment selector. You can enter either the assessment name or its UUID."
-        },
-        "appsecWorkbench.assetId": {
-          "type": "string",
-          "default": "",
-          "description": "Asset selector. You can enter either the asset name or its UUID."
-        },
-        "appsecWorkbench.authToken": {
-          "type": "string",
-          "default": ""
-        },
-        "appsecWorkbench.selectionActionPopupEnabled": {
-          "type": "boolean",
-          "default": true,
-          "description": "Show inline AppSec CodeLens actions for the current selection or symbol."
-        },
-        "appsecWorkbench.markContextPadding": {
-          "type": "number",
-          "default": 10,
-          "minimum": 0,
-          "description": "How many surrounding lines to attach when creating SOURCE/SINK/GUARD/TRANSFORM marks. The snippet is capped to the enclosing method/function when available."
         },
         "appsecWorkbench.debugLogs": {
           "type": "boolean",
@@ -206,9 +184,35 @@
       {
         "command": "appsecWorkbench.toggleMarkDeadEnd",
         "title": "AppSec: Toggle Dead End"
+      },
+      {
+        "command": "appsecWorkbench.setMarkDescriptionFromSelection",
+        "title": "AppSec: Set Mark Description"
+      },
+      {
+        "command": "appsecWorkbench.saveMarkDescription",
+        "title": "AppSec: Save Mark Description",
+        "icon": "$(check)"
+      },
+      {
+        "command": "appsecWorkbench.cancelMarkDescription",
+        "title": "AppSec: Cancel Mark Description",
+        "icon": "$(close)"
       }
     ],
     "menus": {
+      "comments/commentThread/title": [
+        {
+          "command": "appsecWorkbench.saveMarkDescription",
+          "when": "commentController == appsec-mark-description",
+          "group": "navigation@1"
+        },
+        {
+          "command": "appsecWorkbench.cancelMarkDescription",
+          "when": "commentController == appsec-mark-description",
+          "group": "navigation@2"
+        }
+      ],
       "editor/lineNumber/context": [
         {
           "command": "appsecWorkbench.markNote",

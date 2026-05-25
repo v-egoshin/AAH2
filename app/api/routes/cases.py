@@ -13,6 +13,9 @@ def create_case(assessment_id: UUID, payload: CaseCreate):
     store = get_store()
     if store.get_assessment(assessment_id) is None:
         raise HTTPException(status_code=404, detail="Assessment not found")
+    asset = store.get_asset(payload.asset_id)
+    if asset is None or asset.assessment_id != assessment_id:
+        raise HTTPException(status_code=404, detail="Asset not found")
     return store.create_case(assessment_id, payload)
 
 
@@ -31,7 +34,18 @@ def get_case(case_id: UUID):
 
 @router.patch("/api/cases/{case_id}")
 def patch_case(case_id: UUID, payload: CaseUpdate):
+    if payload.asset_id is not None:
+        asset = get_store().get_asset(payload.asset_id)
+        if asset is None:
+            raise HTTPException(status_code=404, detail="Asset not found")
     record = get_store().update_case(case_id, payload)
     if record is None:
         raise HTTPException(status_code=404, detail="Case not found")
     return record
+
+
+@router.delete("/api/cases/{case_id}")
+def delete_case(case_id: UUID):
+    if not get_store().delete_case(case_id):
+        raise HTTPException(status_code=404, detail="Case not found")
+    return {"ok": True}

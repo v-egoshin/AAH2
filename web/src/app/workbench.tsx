@@ -1,8 +1,33 @@
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { ApiClient, Assessment, Asset } from "../api/client";
+import { expandHomePath } from "../lib/assetPath";
 
 const DEFAULT_BASE_URL = "http://localhost:8000/api";
-const PROJECT_PATHS_STORAGE_KEY = "appsec.projectBasePathByAsset";
+const PROJECT_BASE_PATHS_KEY = "appsec.projectBasePathByAsset";
+const HOME_PATH_KEY = "appsec.homePath";
+
+function readProjectBasePaths(): Record<string, string> {
+  try {
+    const raw = localStorage.getItem(PROJECT_BASE_PATHS_KEY);
+    if (!raw) {
+      return {};
+    }
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== "object") {
+      return {};
+    }
+    return Object.fromEntries(
+      Object.entries(parsed as Record<string, unknown>).filter(([, value]) => typeof value === "string"),
+    ) as Record<string, string>;
+  } catch {
+    return {};
+  }
+}
+
+function inferHomeFromAbsolutePath(path: string): string | null {
+  const match = path.match(/^(\/home\/[^/]+|\/Users\/[^/]+|[A-Za-z]:[\\/][^\\/]+)/);
+  return match?.[1]?.replace(/\\/g, "/") ?? null;
+}
 
 function inferAssetBasePath(asset?: Asset | null) {
   if (!asset) {
@@ -29,6 +54,7 @@ type WorkbenchContextValue = {
   projectBasePath: string;
   setProjectBasePath: (value: string) => void;
   getProjectBasePathForAsset: (assetId?: string | null) => string;
+  getWorkspaceRoot: () => string;
   setProjectBasePathForAsset: (assetId: string, value: string) => void;
   assessments: Assessment[];
   selectedAssessmentId: string;
@@ -45,18 +71,7 @@ export function WorkbenchProvider({ children }: { children: React.ReactNode }) {
   const [assets, setAssets] = useState<Asset[]>([]);
   const [selectedAssessmentId, setSelectedAssessmentIdState] = useState(() => localStorage.getItem("appsec.assessmentId") || "");
   const [selectedAssetId, setSelectedAssetIdState] = useState(() => localStorage.getItem("appsec.assetId") || "");
-  const [projectBasePathByAsset, setProjectBasePathByAsset] = useState<Record<string, string>>(() => {
-    const raw = localStorage.getItem(PROJECT_PATHS_STORAGE_KEY);
-    if (!raw) {
-      return {};
-    }
-    try {
-      const parsed = JSON.parse(raw);
-      return parsed && typeof parsed === "object" ? parsed as Record<string, string> : {};
-    } catch {
-      return {};
-    }
-  });
+  const [projectBasePathByAsset, setProjectBasePathByAssetState] = useState<Record<string, string>>(readProjectBasePaths);
 
   const api = useMemo(() => new ApiClient(baseUrl), [baseUrl]);
 
@@ -87,10 +102,6 @@ export function WorkbenchProvider({ children }: { children: React.ReactNode }) {
   }, [selectedAssetId]);
 
   useEffect(() => {
-    localStorage.setItem(PROJECT_PATHS_STORAGE_KEY, JSON.stringify(projectBasePathByAsset));
-  }, [projectBasePathByAsset]);
-
-  useEffect(() => {
     void refreshAssessments().catch(() => setAssessments([]));
   }, [api]);
 
@@ -117,31 +128,46 @@ export function WorkbenchProvider({ children }: { children: React.ReactNode }) {
   }, [assets, selectedAssetId]);
 
   const selectedAsset = assets.find((item) => item.id === selectedAssetId) ?? null;
-  const inferredSelectedAssetBasePath = inferAssetBasePath(selectedAsset);
+  const inferredSelectedAssetBasePath = expandHomePath(inferAssetBasePath(selectedAsset));
   const projectBasePath = selectedAssetId
-    ? (projectBasePathByAsset[selectedAssetId] ?? inferredSelectedAssetBasePath)
+    ? expandHomePath(projectBasePathByAsset[selectedAssetId] ?? inferredSelectedAssetBasePath)
     : "";
 
   const setProjectBasePath = (value: string) => {
     if (!selectedAssetId) {
       return;
     }
-    setProjectBasePathByAsset((current) => ({ ...current, [selectedAssetId]: value }));
+    setProjectBasePathForAsset(selectedAssetId, value);
   };
 
   const setProjectBasePathForAsset = (assetId: string, value: string) => {
-    setProjectBasePathByAsset((current) => ({ ...current, [assetId]: value }));
+    const trimmed = value.trim();
+    setProjectBasePathByAssetState((current) => {
+      const next = { ...current };
+      if (trimmed) {
+        next[assetId] = trimmed;
+      } else {
+        delete next[assetId];
+      }
+      localStorage.setItem(PROJECT_BASE_PATHS_KEY, JSON.stringify(next));
+      const inferredHome = inferHomeFromAbsolutePath(trimmed);
+      if (inferredHome && !localStorage.getItem(HOME_PATH_KEY)) {
+        localStorage.setItem(HOME_PATH_KEY, inferredHome);
+      }
+      return next;
+    });
   };
 
   const getProjectBasePathForAsset = (assetId?: string | null) => {
-    if (!assetId) {
+    const resolvedAssetId = assetId ?? selectedAssetId;
+    if (!resolvedAssetId) {
       return projectBasePath;
     }
-    const stored = projectBasePathByAsset[assetId];
-    if (stored) {
-      return stored;
+    const override = projectBasePathByAsset[resolvedAssetId]?.trim();
+    if (override) {
+      return expandHomePath(override);
     }
-    return inferAssetBasePath(assets.find((item) => item.id === assetId) ?? null);
+    return expandHomePath(inferAssetBasePath(assets.find((item) => item.id === resolvedAssetId) ?? null));
   };
 
   const value: WorkbenchContextValue = {
@@ -155,6 +181,7 @@ export function WorkbenchProvider({ children }: { children: React.ReactNode }) {
     projectBasePath,
     setProjectBasePath,
     getProjectBasePathForAsset,
+    getWorkspaceRoot: () => "",
     setProjectBasePathForAsset,
     assessments,
     selectedAssessmentId,

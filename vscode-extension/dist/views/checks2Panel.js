@@ -70,28 +70,6 @@ function sortRows(rows) {
         return String(a.title ?? a.id).localeCompare(String(b.title ?? b.id));
     });
 }
-function readProjectBasePaths() {
-    const folders = vscode.workspace.workspaceFolders ?? [];
-    for (const folder of folders) {
-        const value = vscode.workspace.getConfiguration("appsecWorkbench", folder.uri).get("projectBasePathByAsset");
-        if (value && typeof value === "object") {
-            return value;
-        }
-    }
-    return {};
-}
-async function updateProjectBasePath(assetId, basePath) {
-    const cfg = vscode.workspace.getConfiguration("appsecWorkbench");
-    const current = cfg.get("projectBasePathByAsset", {});
-    const next = { ...current };
-    if (basePath.trim()) {
-        next[assetId] = basePath.trim();
-    }
-    else {
-        delete next[assetId];
-    }
-    await cfg.update("projectBasePathByAsset", next, vscode.ConfigurationTarget.Workspace);
-}
 class Checks2Panel {
     constructor(extensionUri) {
         this.extensionUri = extensionUri;
@@ -139,10 +117,6 @@ class Checks2Panel {
                     }
                     return;
                 case "setProjectBasePath":
-                    if (message.assetId) {
-                        await updateProjectBasePath(message.assetId, message.projectBasePath ?? "");
-                        await this.pushData();
-                    }
                     return;
                 case "createCheck":
                     await this.createCheck(message.payload ?? {});
@@ -178,7 +152,7 @@ class Checks2Panel {
                     if (message.id) {
                         const resolved = await this.createApiClient().resolveIds();
                         if (typeof message.assetId === "string" && message.assetId && message.assetId !== resolved.assetId) {
-                            await vscode.workspace.getConfiguration("appsecWorkbench").update("assetId", message.assetId, vscode.ConfigurationTarget.Workspace);
+                            await (0, assessmentState_1.updateAssessmentState)({ assetId: message.assetId });
                         }
                         (0, activeCase_1.setActiveCase)({
                             id: message.id,
@@ -196,7 +170,7 @@ class Checks2Panel {
                     await this.pushData();
                     return;
                 case "setCodeLensEnabled":
-                    await vscode.workspace.getConfiguration("appsecWorkbench").update("selectionActionPopupEnabled", Boolean(message.payload?.enabled), vscode.ConfigurationTarget.Workspace);
+                    await (0, assessmentState_1.updateAssessmentState)({ selectionActionPopupEnabled: Boolean(message.payload?.enabled) });
                     return;
                 case "updateAsset":
                     if (message.assetId) {
@@ -244,27 +218,26 @@ class Checks2Panel {
             relations: [],
             assessments: [],
             assets: [],
-            projectBasePaths: {},
             assessmentId: "",
             assetId: "",
             activeCaseId: "",
             activeCaseTitle: "",
             activeCaseStatus: "",
+            workspaceRoot: vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? "",
             error: "",
         };
         try {
             const client = this.createApiClient(state);
             const assessments = asAssessments(await client.listAssessments());
-            const projectBasePaths = readProjectBasePaths();
-            if (!state.assessmentId.trim()) {
-                return { ...empty, assessments, projectBasePaths, error: "Select assessment." };
+            if (!assessments.length) {
+                return { ...empty, assessments, error: "Create assessment first." };
             }
             const assessmentId = await client.resolveAssessmentId();
             const assets = asAssets(await client.listAssets(assessmentId));
             let assetId = await client.resolveAssetId(assessmentId);
             if (!assetId && assets[0]) {
                 assetId = assets[0].id;
-                await vscode.workspace.getConfiguration("appsecWorkbench").update("assetId", assetId, vscode.ConfigurationTarget.Workspace);
+                await (0, assessmentState_1.updateAssessmentState)({ assetId });
             }
             const [checks, cases, relations] = await Promise.all([
                 client.listChecks(),
@@ -288,12 +261,12 @@ class Checks2Panel {
                 relations: asRelations(relations),
                 assessments,
                 assets,
-                projectBasePaths,
                 assessmentId,
                 assetId,
                 activeCaseId: scopedActiveCase?.id ?? "",
                 activeCaseTitle: scopedActiveCase?.title ?? "",
                 activeCaseStatus: activeCaseRow?.status ?? "",
+                workspaceRoot: vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? "",
                 codeLensEnabled: (0, assessmentState_1.readState)().selectionActionPopupEnabled,
                 error: "",
             };
@@ -306,10 +279,8 @@ class Checks2Panel {
         try {
             const client = this.createApiClient({ ...(0, assessmentState_1.readState)(), assessmentId, assetId: "" });
             const assets = assessmentId ? asAssets(await client.listAssets(assessmentId)) : [];
-            const cfg = vscode.workspace.getConfiguration("appsecWorkbench");
             (0, activeCase_1.setActiveCase)(null);
-            await cfg.update("assessmentId", assessmentId, vscode.ConfigurationTarget.Workspace);
-            await cfg.update("assetId", assets[0]?.id ?? "", vscode.ConfigurationTarget.Workspace);
+            await (0, assessmentState_1.updateAssessmentState)({ assessmentId, assetId: assets[0]?.id ?? "" });
             await this.pushData();
         }
         catch (error) {
@@ -318,7 +289,7 @@ class Checks2Panel {
     }
     async setAsset(assetId) {
         try {
-            await vscode.workspace.getConfiguration("appsecWorkbench").update("assetId", assetId, vscode.ConfigurationTarget.Workspace);
+            await (0, assessmentState_1.updateAssessmentState)({ assetId });
             await this.pushData();
         }
         catch (error) {
@@ -331,9 +302,7 @@ class Checks2Panel {
                 title: String(payload.title ?? "").trim(),
                 description: String(payload.description ?? ""),
             });
-            const cfg = vscode.workspace.getConfiguration("appsecWorkbench");
-            await cfg.update("assessmentId", created.id, vscode.ConfigurationTarget.Workspace);
-            await cfg.update("assetId", "", vscode.ConfigurationTarget.Workspace);
+            await (0, assessmentState_1.updateAssessmentState)({ assessmentId: created.id, assetId: "" });
             await this.pushData();
         }
         catch (error) {
@@ -355,10 +324,9 @@ class Checks2Panel {
     async deleteAssessment(assessmentId) {
         try {
             await this.createApiClient().deleteAssessment(assessmentId);
-            const cfg = vscode.workspace.getConfiguration("appsecWorkbench");
             const assessments = asAssessments(await this.createApiClient({ ...(0, assessmentState_1.readState)(), assessmentId: "", assetId: "" }).listAssessments());
-            await cfg.update("assessmentId", assessments[0]?.id ?? "", vscode.ConfigurationTarget.Workspace);
-            await cfg.update("assetId", "", vscode.ConfigurationTarget.Workspace);
+            await (0, assessmentState_1.updateAssessmentState)({ assessmentId: assessments[0]?.id ?? "", assetId: "" });
+            (0, activeCase_1.setActiveCase)(null);
             await this.pushData();
         }
         catch (error) {
@@ -377,10 +345,7 @@ class Checks2Panel {
                 version_ref: payload.version_ref == null ? null : String(payload.version_ref),
                 metadata: typeof payload.metadata === "object" && payload.metadata ? payload.metadata : {},
             });
-            await vscode.workspace.getConfiguration("appsecWorkbench").update("assetId", created.id, vscode.ConfigurationTarget.Workspace);
-            if (typeof payload.projectBasePath === "string") {
-                await updateProjectBasePath(created.id, payload.projectBasePath);
-            }
+            await (0, assessmentState_1.updateAssessmentState)({ assetId: created.id });
             await this.pushData();
         }
         catch (error) {
@@ -403,9 +368,10 @@ class Checks2Panel {
             const client = this.createApiClient({ ...state, assetId: "" });
             const assessmentId = await client.resolveAssessmentId();
             const assets = asAssets(await client.listAssets(assessmentId));
-            const cfg = vscode.workspace.getConfiguration("appsecWorkbench");
-            await cfg.update("assetId", assets[0]?.id ?? "", vscode.ConfigurationTarget.Workspace);
-            await updateProjectBasePath(assetId, "");
+            await (0, assessmentState_1.updateAssessmentState)({ assetId: assets[0]?.id ?? "" });
+            if ((0, activeCase_1.getActiveCase)()?.assetId === assetId) {
+                (0, activeCase_1.setActiveCase)(null);
+            }
             await this.pushData();
         }
         catch (error) {
@@ -530,6 +496,7 @@ class Checks2Panel {
     .selector.case { width: 150px; }
     .btn { height: 24px; padding: 0 8px; color: var(--vscode-button-secondaryForeground); background: var(--vscode-button-secondaryBackground); border: 1px solid var(--vscode-button-border, transparent); border-radius: 3px; cursor: pointer; white-space: nowrap; }
     .btn.primary { color: var(--vscode-button-foreground); background: var(--vscode-button-background); }
+    .btn.danger { color: var(--vscode-button-foreground); background: var(--vscode-errorForeground); border-color: var(--vscode-errorForeground); }
     .btn.active { color: var(--vscode-button-foreground); background: var(--vscode-button-background); }
     .btn:hover:not(:disabled) { background: var(--vscode-button-secondaryHoverBackground); }
     .btn.primary:hover:not(:disabled) { background: var(--vscode-button-hoverBackground); }
@@ -583,6 +550,14 @@ class Checks2Panel {
     .field { display: grid; gap: 4px; }
     .field.two { grid-template-columns: 1fr 1fr; gap: 8px; }
     .manager-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .manage-section { display: grid; gap: 8px; padding-top: 8px; border-top: 1px solid var(--vscode-panel-border); }
+    .manage-section:first-child { padding-top: 0; border-top: 0; }
+    .manage-section.is-disabled { opacity: 0.58; }
+    .danger-zone { display: flex; justify-content: flex-end; gap: 6px; }
+    .section-label { color: var(--vscode-foreground); font-size: 12px; font-weight: 600; }
+    .path-preview { min-height: 18px; color: var(--vscode-descriptionForeground); font-size: 11px; overflow-wrap: anywhere; }
+    .path-preview.warn { color: var(--vscode-editorWarning-foreground); }
+    .path-preview.good { color: var(--vscode-testing-iconPassed); }
     .danger-text { color: var(--vscode-errorForeground); }
     .confirm-body { padding: 10px; display: grid; gap: 10px; }
     label { color: var(--vscode-descriptionForeground); }
@@ -765,20 +740,9 @@ class Checks2Panel {
         </div>
         <div class="field">
           <label for="assetLocator">Locator</label>
-          <input id="assetLocator" name="locator" type="text" />
-        </div>
-        <div class="field">
-          <label for="assetProjectPath">Project base path</label>
-          <input id="assetProjectPath" name="project_base_path" type="text" placeholder="/workspace/repo" />
-        </div>
-        <div class="field">
-          <label for="assetVersion">Version ref</label>
-          <input id="assetVersion" name="version_ref" type="text" />
-        </div>
-        <div class="field">
-          <label for="assetMetadata">Metadata JSON</label>
-          <textarea id="assetMetadata" name="metadata" rows="3"></textarea>
-          <div id="assetMetadataError" class="field-error"></div>
+          <input id="assetLocator" name="locator" type="text" placeholder="Absolute local folder, e.g. /Users/me/project" />
+          <div id="assetPathPreview" class="path-preview"></div>
+          <div id="assetError" class="field-error"></div>
         </div>
         <div class="form-actions">
           <button id="assetSubmit" class="btn primary" type="submit">Save asset</button>
@@ -789,49 +753,70 @@ class Checks2Panel {
   <div id="manageBackdrop" class="modal-backdrop" role="presentation">
     <div class="modal" role="dialog" aria-modal="true" aria-labelledby="manageModalTitle">
       <div class="modal-head">
-        <h2 id="manageModalTitle" class="modal-title">Manage Assessments And Assets</h2>
+        <h2 id="manageModalTitle" class="modal-title">Manage Scope</h2>
         <button id="manageModalClose" class="icon-btn" type="button" aria-label="Close">×</button>
       </div>
       <div class="form">
-        <div class="manager-grid">
-          <div class="field">
-            <label for="manageAssessmentSelect">Assessment</label>
-            <select id="manageAssessmentSelect"></select>
-          </div>
-          <div class="field">
-            <label for="manageAssetSelect">Asset</label>
-            <select id="manageAssetSelect"></select>
+        <div class="manage-section">
+          <div class="section-label">Current selection</div>
+          <div class="manager-grid">
+            <div class="field">
+              <label for="manageAssessmentSelect">Active assessment</label>
+              <select id="manageAssessmentSelect"></select>
+            </div>
+            <div class="field">
+              <label for="manageAssetSelect">Active asset</label>
+              <select id="manageAssetSelect"></select>
+            </div>
           </div>
         </div>
-        <form id="manageAssessmentForm" class="field">
-          <label for="manageAssessmentTitle">Assessment title</label>
-          <input id="manageAssessmentTitle" type="text" required />
-          <textarea id="manageAssessmentDescription" rows="2" placeholder="Description"></textarea>
+        <form id="manageAssessmentForm" class="manage-section">
+          <div class="section-label">Assessment details</div>
+          <div class="field">
+            <label for="manageAssessmentTitle">Assessment title</label>
+            <input id="manageAssessmentTitle" type="text" required />
+          </div>
+          <div class="field">
+            <label for="manageAssessmentDescription">Assessment description</label>
+            <textarea id="manageAssessmentDescription" rows="2"></textarea>
+          </div>
           <div class="form-actions">
-            <button id="manageAssessmentDelete" class="btn danger-text" type="button">Delete assessment</button>
             <button id="manageAssessmentNew" class="btn" type="button">New assessment</button>
             <button class="btn primary" type="submit">Save assessment</button>
           </div>
         </form>
-        <form id="manageAssetForm" class="field">
-          <label for="manageAssetName">Asset</label>
+        <form id="manageAssetForm" class="manage-section">
+          <div class="section-label">Asset opener</div>
           <div class="field two">
-            <input id="manageAssetName" type="text" required />
-            <select id="manageAssetType">
-              <option>REPOSITORY</option><option>URL</option><option>URL_GROUP</option><option>DOMAIN</option><option>SERVICE</option><option>API_SPEC</option><option>BLACKBOX_TARGET</option><option>BINARY</option><option>CONTAINER_IMAGE</option><option>DOCUMENT</option><option>OTHER</option>
-            </select>
+            <div class="field">
+              <label for="manageAssetName">Asset name</label>
+              <input id="manageAssetName" type="text" required />
+            </div>
+            <div class="field">
+              <label for="manageAssetType">Asset type</label>
+              <select id="manageAssetType">
+                <option>REPOSITORY</option><option>URL</option><option>URL_GROUP</option><option>DOMAIN</option><option>SERVICE</option><option>API_SPEC</option><option>BLACKBOX_TARGET</option><option>BINARY</option><option>CONTAINER_IMAGE</option><option>DOCUMENT</option><option>OTHER</option>
+              </select>
+            </div>
           </div>
-          <input id="manageAssetLocator" type="text" placeholder="Asset locator" />
-          <input id="manageAssetProjectPath" type="text" placeholder="Project base path" />
-          <input id="manageAssetVersion" type="text" placeholder="Version ref" />
-          <textarea id="manageAssetMetadata" rows="2" placeholder="{}"></textarea>
-          <div id="manageAssetMetadataError" class="field-error"></div>
+          <div class="field">
+            <label for="manageAssetLocator">Locator</label>
+            <input id="manageAssetLocator" type="text" placeholder="Absolute local folder, e.g. /Users/me/project" />
+            <div id="manageAssetPathPreview" class="path-preview"></div>
+          </div>
+          <div id="manageAssetError" class="field-error"></div>
           <div class="form-actions">
-            <button id="manageAssetDelete" class="btn danger-text" type="button">Delete asset</button>
             <button id="manageAssetNew" class="btn" type="button">New asset</button>
             <button class="btn primary" type="submit">Save asset</button>
           </div>
         </form>
+        <div class="manage-section">
+          <div class="section-label">Danger zone</div>
+          <div class="danger-zone">
+            <button id="manageAssessmentDelete" class="btn danger" type="button">Delete assessment</button>
+            <button id="manageAssetDelete" class="btn danger" type="button">Delete asset</button>
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -878,7 +863,7 @@ class Checks2Panel {
                 <li><kbd>Alt+Shift+K</kbd> Sink</li>
                 <li><kbd>Alt+Shift+G</kbd> Guard</li>
                 <li><kbd>Alt+Shift+T</kbd> Transform</li>
-                <li><kbd>Alt+Shift+C</kbd> Create Check</li>
+                <li>CodeLens: Set Description (on marked lines)</li>
               </ul>
             </div>
           </span>
@@ -897,7 +882,7 @@ class Checks2Panel {
     let relations = [];
     let assessments = [];
     let assets = [];
-    let projectBasePaths = {};
+    let workspaceRoot = '';
     let currentAssessmentId = '';
     let currentAssetId = '';
     let activeCaseId = '';
@@ -953,28 +938,24 @@ class Checks2Panel {
     const assetNameInput = document.getElementById('assetName');
     const assetTypeInput = document.getElementById('assetType');
     const assetLocatorInput = document.getElementById('assetLocator');
-    const assetProjectPathInput = document.getElementById('assetProjectPath');
-    const assetVersionInput = document.getElementById('assetVersion');
-    const assetMetadataInput = document.getElementById('assetMetadata');
-    const assetMetadataError = document.getElementById('assetMetadataError');
+    const assetPathPreview = document.getElementById('assetPathPreview');
+    const assetError = document.getElementById('assetError');
     const assetSubmit = document.getElementById('assetSubmit');
     const manageAssessmentSelect = document.getElementById('manageAssessmentSelect');
     const manageAssetSelect = document.getElementById('manageAssetSelect');
     const manageAssessmentForm = document.getElementById('manageAssessmentForm');
     const manageAssessmentTitle = document.getElementById('manageAssessmentTitle');
     const manageAssessmentDescription = document.getElementById('manageAssessmentDescription');
-    const manageAssessmentDelete = document.getElementById('manageAssessmentDelete');
     const manageAssessmentNew = document.getElementById('manageAssessmentNew');
+    const manageAssessmentDelete = document.getElementById('manageAssessmentDelete');
     const manageAssetForm = document.getElementById('manageAssetForm');
     const manageAssetName = document.getElementById('manageAssetName');
     const manageAssetType = document.getElementById('manageAssetType');
     const manageAssetLocator = document.getElementById('manageAssetLocator');
-    const manageAssetProjectPath = document.getElementById('manageAssetProjectPath');
-    const manageAssetVersion = document.getElementById('manageAssetVersion');
-    const manageAssetMetadata = document.getElementById('manageAssetMetadata');
-    const manageAssetMetadataError = document.getElementById('manageAssetMetadataError');
-    const manageAssetDelete = document.getElementById('manageAssetDelete');
+    const manageAssetPathPreview = document.getElementById('manageAssetPathPreview');
+    const manageAssetError = document.getElementById('manageAssetError');
     const manageAssetNew = document.getElementById('manageAssetNew');
+    const manageAssetDelete = document.getElementById('manageAssetDelete');
     const confirmMessage = document.getElementById('confirmMessage');
     const form = document.getElementById('checkForm');
     const modalCaseList = document.getElementById('modalCaseList');
@@ -1458,8 +1439,8 @@ class Checks2Panel {
     function closeCaseModal() { caseBackdrop.classList.remove('open'); caseModalRowId = ''; }
     function closeBulkModal() { bulkBackdrop.classList.remove('open'); bulkParentId = null; bulkText.value = ''; updateBulkCount(); }
     function closeAssessmentModal() { assessmentBackdrop.classList.remove('open'); }
-    function closeAssetModal() { assetBackdrop.classList.remove('open'); assetMetadataError.textContent = ''; }
-    function closeManageModal() { manageBackdrop.classList.remove('open'); manageAssetMetadataError.textContent = ''; }
+    function closeAssetModal() { assetBackdrop.classList.remove('open'); assetError.textContent = ''; }
+    function closeManageModal() { manageBackdrop.classList.remove('open'); manageAssetError.textContent = ''; }
     function closeConfirmModal() { confirmBackdrop.classList.remove('open'); pendingConfirm = null; }
     function openSettingsModal() {
       document.getElementById('showPriorityToggle').checked = showPriority;
@@ -1597,10 +1578,8 @@ class Checks2Panel {
       assetTypeInput.value = 'REPOSITORY';
       assetTypeInput.disabled = false;
       assetLocatorInput.value = '';
-      assetProjectPathInput.value = '';
-      assetVersionInput.value = '';
-      assetMetadataInput.value = '{}';
-      assetMetadataError.textContent = '';
+      assetError.textContent = '';
+      updateAssetPathPreview();
       assetSubmit.textContent = 'Create asset';
       assetBackdrop.classList.add('open');
       assetNameInput.focus();
@@ -1614,10 +1593,8 @@ class Checks2Panel {
       assetTypeInput.value = asset.type || 'OTHER';
       assetTypeInput.disabled = true;
       assetLocatorInput.value = asset.locator || '';
-      assetProjectPathInput.value = projectBasePaths[asset.id] || '';
-      assetVersionInput.value = asset.version_ref || '';
-      assetMetadataInput.value = JSON.stringify(asset.metadata || {}, null, 2);
-      assetMetadataError.textContent = '';
+      assetError.textContent = '';
+      updateAssetPathPreview();
       assetSubmit.textContent = 'Save asset';
       assetBackdrop.classList.add('open');
       assetLocatorInput.focus();
@@ -1628,6 +1605,51 @@ class Checks2Panel {
     function updateBulkCount() {
       bulkCount.textContent = 'Will add: ' + parseBulkChecksInput(bulkText.value).length;
     }
+    function splitLocator(locator) {
+      const match = String(locator || '').trim().match(/^(.+?)(?::(\\d+))?(?::(\\d+))?$/);
+      if (!match?.[1]) return null;
+      return { file: match[1], line: match[2] || '', column: match[3] || '' };
+    }
+    function isAbsolutePath(value) {
+      return String(value || '').startsWith('/') || /^[A-Za-z]:[\\\\/]/.test(String(value || ''));
+    }
+    function looksLikeExternalLocator(value) {
+      return /^[a-z][a-z0-9+.-]*:\\/\\//i.test(String(value || '').trim());
+    }
+    function resolvedPathPreview(locator) {
+      const parsed = splitLocator(locator);
+      if (!parsed) return { text: 'No asset locator set.', kind: '' };
+      const file = parsed.file;
+      if (looksLikeExternalLocator(file)) {
+        return { text: 'External locator. Linked Entities file opens need an absolute local folder here.', kind: 'warn' };
+      }
+      if (!isAbsolutePath(file)) {
+        return { text: 'Use an absolute local folder here. Linked Entities relative paths will be opened under it.', kind: 'warn' };
+      }
+      const rootBase = file.replace(/[\\/]+$/, '').split(/[\\\\/]/).pop() || '';
+      if (rootBase === 'app') {
+        return {
+          text: 'Locator points at the app/ package folder. Set the repository root instead; entity paths already include app/.',
+          kind: 'warn'
+        };
+      }
+      const suffix = parsed.line ? ' (line suffix ignored for asset prefix)' : '';
+      return {
+        text: 'Linked Entities relative paths open under: ' + file + suffix,
+        kind: 'good'
+      };
+    }
+    function setPathPreview(element, locator) {
+      const preview = resolvedPathPreview(locator);
+      element.textContent = preview.text;
+      element.className = 'path-preview' + (preview.kind ? ' ' + preview.kind : '');
+    }
+    function updateAssetPathPreview() {
+      setPathPreview(assetPathPreview, assetLocatorInput.value);
+    }
+    function updateManageAssetPathPreview() {
+      setPathPreview(manageAssetPathPreview, manageAssetLocator.value);
+    }
     function openBulkModal(parentId) {
       bulkParentId = parentId || null;
       const parent = bulkParentId ? byId(bulkParentId) : null;
@@ -1636,30 +1658,6 @@ class Checks2Panel {
       updateBulkCount();
       bulkBackdrop.classList.add('open');
       bulkText.focus();
-    }
-    function parseAssetMetadata() {
-      const raw = assetMetadataInput.value.trim();
-      if (!raw) return {};
-      try {
-        const parsed = JSON.parse(raw);
-        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('Metadata must be a JSON object.');
-        return parsed;
-      } catch (error) {
-        assetMetadataError.textContent = error instanceof Error ? error.message : String(error);
-        return null;
-      }
-    }
-    function parseJsonTextarea(input, errorElement) {
-      const raw = input.value.trim();
-      if (!raw) return {};
-      try {
-        const parsed = JSON.parse(raw);
-        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('Metadata must be a JSON object.');
-        return parsed;
-      } catch (error) {
-        errorElement.textContent = error instanceof Error ? error.message : String(error);
-        return null;
-      }
     }
     function descendantsOf(id) {
       const result = [];
@@ -1678,6 +1676,11 @@ class Checks2Panel {
       manageAssessmentTitle.value = item?.title || '';
       manageAssessmentDescription.value = item?.description || '';
       manageAssessmentDelete.disabled = !item;
+      if (!item) {
+        manageAssetId = '';
+        selectManagedAsset('');
+        return;
+      }
       if (manageAssessmentId && manageAssessmentId !== currentAssessmentId) {
         manageAssetId = '';
         vscode.postMessage({ type: 'setAssessment', assessmentId: manageAssessmentId });
@@ -1692,12 +1695,18 @@ class Checks2Panel {
       manageAssetType.value = item?.type || 'REPOSITORY';
       manageAssetType.disabled = Boolean(item);
       manageAssetLocator.value = item?.locator || '';
-      manageAssetProjectPath.value = item ? (projectBasePaths[item.id] || '') : '';
-      manageAssetVersion.value = item?.version_ref || '';
-      manageAssetMetadata.value = JSON.stringify(item?.metadata || {}, null, 2);
       manageAssetDelete.disabled = !item;
-      manageAssetMetadataError.textContent = '';
+      manageAssetError.textContent = '';
+      updateManageAssetPathPreview();
       renderManageSelectors();
+    }
+    function setManageAssetFieldsDisabled(disabled) {
+      manageAssetForm.classList.toggle('is-disabled', disabled);
+      manageAssetName.disabled = disabled;
+      manageAssetType.disabled = disabled || Boolean(manageAssetId);
+      manageAssetLocator.disabled = disabled;
+      manageAssetNew.disabled = disabled;
+      manageAssetForm.querySelector('button[type="submit"]').disabled = disabled;
     }
     function renderManageSelectors() {
       manageAssessmentSelect.textContent = '';
@@ -1726,6 +1735,7 @@ class Checks2Panel {
       }
       manageAssetSelect.value = manageAssetId;
       manageAssetSelect.disabled = !manageAssessmentId;
+      setManageAssetFieldsDisabled(!manageAssessmentId);
     }
     function openManageModal() {
       manageAssessmentId = currentAssessmentId || assessments[0]?.id || '';
@@ -2004,6 +2014,8 @@ class Checks2Panel {
     document.getElementById('manageScope').addEventListener('click', openManageModal);
     manageAssessmentSelect.addEventListener('change', () => selectManagedAssessment(manageAssessmentSelect.value));
     manageAssetSelect.addEventListener('change', () => selectManagedAsset(manageAssetSelect.value));
+    assetLocatorInput.addEventListener('input', updateAssetPathPreview);
+    manageAssetLocator.addEventListener('input', updateManageAssetPathPreview);
     document.getElementById('newCheck').addEventListener('click', () => openModal('create', { parentId: selectedParentForCreate(), isGroup: false }));
     document.getElementById('newGroup').addEventListener('click', () => openModal('create', { parentId: selectedParentForCreate(), isGroup: true }));
     document.getElementById('newCase').addEventListener('click', () => vscode.postMessage({ type: 'createCase' }));
@@ -2140,23 +2152,18 @@ class Checks2Panel {
       event.preventDefault();
       if (!assetNameInput.value.trim()) return;
       if (assetModalMode === 'create' && duplicateAssetName(assetNameInput.value, '')) {
-        assetMetadataError.textContent = 'Asset with this name already exists.';
+        assetError.textContent = 'Asset with this name already exists.';
         return;
       }
-      assetMetadataError.textContent = '';
-      const metadata = parseAssetMetadata();
-      if (metadata === null) return;
+      assetError.textContent = '';
       const payload = {
         name: assetNameInput.value.trim(),
-        locator: assetLocatorInput.value.trim() || null,
-        version_ref: assetVersionInput.value.trim() || null,
-        metadata
+        locator: assetLocatorInput.value.trim() || null
       };
       if (assetModalMode === 'create') {
-        vscode.postMessage({ type: 'createAsset', payload: Object.assign({ type: assetTypeInput.value, projectBasePath: assetProjectPathInput.value.trim() }, payload) });
+        vscode.postMessage({ type: 'createAsset', payload: Object.assign({ type: assetTypeInput.value }, payload) });
       } else if (currentAssetId) {
         vscode.postMessage({ type: 'updateAsset', assetId: currentAssetId, payload });
-        vscode.postMessage({ type: 'setProjectBasePath', assetId: currentAssetId, projectBasePath: assetProjectPathInput.value.trim() });
       }
       closeAssetModal();
     });
@@ -2193,12 +2200,13 @@ class Checks2Panel {
     });
     manageAssetNew.addEventListener('click', () => {
       selectManagedAsset('');
+      manageAssetDelete.disabled = true;
       manageAssetName.focus();
     });
     manageAssetDelete.addEventListener('click', () => {
       const item = assets.find((row) => row.id === manageAssetId);
       if (!item) return;
-      requestConfirm('Delete asset "' + (item.name || item.id) + '"? Linked records will be kept but detached from this asset.', () => {
+      requestConfirm('Delete asset "' + (item.name || item.id) + '"? Asset-scoped imports, objects, marks, and relations will be removed.', () => {
         vscode.postMessage({ type: 'deleteAsset', assetId: item.id });
         closeManageModal();
       });
@@ -2207,23 +2215,18 @@ class Checks2Panel {
       event.preventDefault();
       if (!manageAssetName.value.trim()) return;
       if (duplicateAssetName(manageAssetName.value, manageAssetId)) {
-        manageAssetMetadataError.textContent = 'Asset with this name already exists.';
+        manageAssetError.textContent = 'Asset with this name already exists.';
         return;
       }
-      manageAssetMetadataError.textContent = '';
-      const metadata = parseJsonTextarea(manageAssetMetadata, manageAssetMetadataError);
-      if (metadata === null) return;
+      manageAssetError.textContent = '';
       const payload = {
         name: manageAssetName.value.trim(),
-        locator: manageAssetLocator.value.trim() || null,
-        version_ref: manageAssetVersion.value.trim() || null,
-        metadata
+        locator: manageAssetLocator.value.trim() || null
       };
       if (manageAssetMode === 'create') {
-        vscode.postMessage({ type: 'createAsset', payload: Object.assign({ type: manageAssetType.value, projectBasePath: manageAssetProjectPath.value.trim() }, payload) });
+        vscode.postMessage({ type: 'createAsset', payload: Object.assign({ type: manageAssetType.value }, payload) });
       } else if (manageAssetId) {
         vscode.postMessage({ type: 'updateAsset', assetId: manageAssetId, payload });
-        vscode.postMessage({ type: 'setProjectBasePath', assetId: manageAssetId, projectBasePath: manageAssetProjectPath.value.trim() });
       }
       closeManageModal();
     });
@@ -2235,7 +2238,7 @@ class Checks2Panel {
         relations = Array.isArray(message.relations) ? message.relations : [];
         assessments = Array.isArray(message.assessments) ? message.assessments : [];
         assets = Array.isArray(message.assets) ? message.assets : [];
-        projectBasePaths = message.projectBasePaths && typeof message.projectBasePaths === 'object' ? message.projectBasePaths : {};
+        workspaceRoot = message.workspaceRoot || '';
         currentAssessmentId = message.assessmentId || '';
         currentAssetId = message.assetId || '';
         activeCaseId = message.activeCaseId || '';

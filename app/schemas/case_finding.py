@@ -8,6 +8,7 @@ from app.schemas.common import new_uuid, utcnow
 
 class CaseCreate(BaseModel):
     title: str
+    asset_id: UUID
     description: str = ""
     severity_hint: str | None = None
     confidence: str = "MEDIUM"
@@ -16,6 +17,7 @@ class CaseCreate(BaseModel):
 class CaseRead(BaseModel):
     id: UUID = Field(default_factory=new_uuid)
     assessment_id: UUID
+    asset_id: UUID
     title: str
     description: str = ""
     status: str = "OPEN"
@@ -27,6 +29,7 @@ class CaseRead(BaseModel):
 
 class CaseUpdate(BaseModel):
     title: str | None = None
+    asset_id: UUID | None = None
     description: str | None = None
     status: str | None = None
     severity_hint: str | None = None

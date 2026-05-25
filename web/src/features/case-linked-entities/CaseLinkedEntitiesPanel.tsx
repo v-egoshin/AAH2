@@ -1,4 +1,4 @@
-import { DragEvent, KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { DragEvent, KeyboardEvent, MouseEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useWorkbench } from "@web/app/workbench";
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from "../../components/context-menu";
@@ -11,6 +11,13 @@ import { HighlightedSnippet } from "./HighlightedSnippet";
 import type { RelationRecord } from "../../api/client";
 import type { CaseGraphDataBundle, GraphNode, RelationDescriptionModalState, RelationDisplayModalState, RelationDropState } from "./types";
 import { useCaseGraphData } from "./useCaseGraphData";
+import {
+  parseLocatorParts,
+  resolveOpenTargetFromParts,
+  type OpenLocatorTarget,
+} from "../../lib/assetPath";
+
+export type { OpenLocatorTarget } from "../../lib/assetPath";
 
 export type EmbedHostMutations = {
   movePartOf: (payload: {
@@ -154,14 +161,31 @@ function collectMarkIdsInSubtree(node: GraphNode): string[] {
   return ids;
 }
 
+function buildNodeOpenTarget(node: GraphNode): OpenLocatorTarget | null {
+  const filePath = String(node.range?.file ?? "").trim()
+    || parseLocatorParts(String(node.locator ?? ""))?.filePath
+    || "";
+  if (!filePath) {
+    return null;
+  }
+  const parsedLocator = node.locator ? parseLocatorParts(String(node.locator)) : null;
+  const line = typeof node.range?.start_line === "number"
+    ? node.range.start_line
+    : parsedLocator?.line;
+  const column = parsedLocator?.column;
+  return { filePath, line, column };
+}
+
+function formatLocatorLabel(target: OpenLocatorTarget) {
+  const suffix = target.line
+    ? `:${target.line}${target.column ? `:${target.column}` : ""}`
+    : "";
+  return `${target.filePath}${suffix}`;
+}
+
 function buildNodeLocator(node: GraphNode): string | null {
-  if (node.locator) {
-    return node.locator;
-  }
-  if (node.range?.file && typeof node.range.start_line === "number") {
-    return `${node.range.file}:${node.range.start_line}`;
-  }
-  return null;
+  const target = buildNodeOpenTarget(node);
+  return target ? formatLocatorLabel(target) : null;
 }
 
 export type CaseLinkedEntitiesPanelProps = {
@@ -171,7 +195,7 @@ export type CaseLinkedEntitiesPanelProps = {
   preloadedData?: CaseGraphDataBundle | null;
   preloadedError?: string | null;
   onRequestReload?: () => void;
-  onOpenLocator?: (locator: string, assetId?: string | null) => void;
+  onOpenLocator?: (target: string | OpenLocatorTarget, assetId?: string | null) => void;
   activeLocator?: { file: string; startLine: number; endLine: number } | null;
   onGraphMutated?: () => void;
   onError?: (message: string) => void;
@@ -193,7 +217,7 @@ export function CaseLinkedEntitiesPanel({
   onSelectCheck,
   hostMutations,
 }: CaseLinkedEntitiesPanelProps) {
-  const { api } = useWorkbench();
+  const { api, getProjectBasePathForAsset, getWorkspaceRoot } = useWorkbench();
   const {
     selected,
     relations,
@@ -266,9 +290,9 @@ export function CaseLinkedEntitiesPanel({
     if (!onOpenLocator) {
       return;
     }
-    const locator = buildNodeLocator(node);
-    if (locator) {
-      onOpenLocator(locator, node.assetId);
+    const target = buildNodeOpenTarget(node);
+    if (target) {
+      onOpenLocator(target, node.assetId);
       if (variant === "embed") {
         requestAnimationFrame(() => treeRef.current?.focus());
       }
@@ -302,7 +326,7 @@ export function CaseLinkedEntitiesPanel({
       return;
     }
 
-    if (event.key === " ") {
+    if (event.key === " " && variant === "embed") {
       event.preventDefault();
       event.stopPropagation();
       const key = focusedNodeKey ?? visibleNodes[0]?.nodeKey;
@@ -313,15 +337,15 @@ export function CaseLinkedEntitiesPanel({
       if (!entry) {
         return;
       }
-      if (entry.hasChildren) {
-        toggleCollapsed(key);
-        return;
-      }
       if (entry.node.snippet?.snippet) {
         toggleSnippet(key);
+        return;
+      }
+      if (entry.hasChildren) {
+        toggleCollapsed(key);
       }
     }
-  }, [focusedNodeKey, openNodeInEditor, visibleNodes]);
+  }, [focusedNodeKey, openNodeInEditor, toggleCollapsed, toggleSnippet, variant, visibleNodes]);
 
   useEffect(() => {
     if (variant !== "embed") {
@@ -589,8 +613,97 @@ export function CaseLinkedEntitiesPanel({
     const showNavLinks = variant !== "embed";
     const isCurrentEditorEntity = nodeMatchesActiveRange(node, activeLocator);
     const isKeyboardFocused = focusedNodeKey === nodeKey;
-    const nodeLocator = buildNodeLocator(node);
-    const canOpenInEditor = Boolean(nodeLocator && onOpenLocator);
+    const openTargetParts = buildNodeOpenTarget(node);
+    const nodeLocator = openTargetParts ? formatLocatorLabel(openTargetParts) : null;
+    const canOpenInEditor = Boolean(openTargetParts && onOpenLocator);
+    const openTarget = openTargetParts
+      ? resolveOpenTargetFromParts(
+        openTargetParts,
+        getProjectBasePathForAsset(node.assetId),
+        getWorkspaceRoot(),
+      )
+      : "";
+    const isEmbed = variant === "embed";
+    const isActionablePill = Boolean(displayRelationLabel);
+    const primaryIsNavigable = isEmbed && (canOpenInEditor || isCheckNode);
+    const primaryIsSnippetToggle = !isEmbed && hasSnippet;
+    const pillIsNavigable = !isEmbed && isActionablePill && canOpenInEditor;
+    const pillIsSnippetToggle = isEmbed && isActionablePill && hasSnippet;
+    const snippetTitle = hasSnippet
+      ? (isSnippetExpanded ? "Hide code context" : "Show code context")
+      : undefined;
+    const openFileTitle = openTarget
+      ? `Open target: ${openTarget}\nLocator: ${nodeLocator}`
+      : nodeLocator
+        ? `Locator: ${nodeLocator}`
+        : undefined;
+    const primaryTitle = isEmbed
+      ? (isCheckNode ? "Open in Checks panel" : openFileTitle)
+      : snippetTitle;
+    const pillTitle = isEmbed
+      ? snippetTitle
+      : (pillIsNavigable ? openFileTitle : (nodeLocator ? "Cannot open: configure asset base path" : undefined));
+
+    const runPrimaryAction = () => {
+      setFocusedNodeKey(nodeKey);
+      if (isCheckNode && isEmbed) {
+        onSelectCheck?.(node.entityId);
+        return;
+      }
+      if (isEmbed && canOpenInEditor) {
+        openNodeInEditor(node);
+        return;
+      }
+      if (!isEmbed && hasSnippet) {
+        toggleSnippet(nodeKey);
+        return;
+      }
+      if (!isEmbed && !hasSnippet) {
+        onError?.("No code snippet for this entity");
+      } else if (isEmbed && !canOpenInEditor && nodeLocator) {
+        onError?.("Cannot open file in editor");
+      } else if (isEmbed && !canOpenInEditor && !nodeLocator) {
+        onError?.("No file locator for this entity");
+      }
+    };
+
+    const runPillAction = () => {
+      setFocusedNodeKey(nodeKey);
+      if (isEmbed && hasSnippet) {
+        toggleSnippet(nodeKey);
+        return;
+      }
+      if (!isEmbed && canOpenInEditor) {
+        openNodeInEditor(node);
+        return;
+      }
+      if (!isEmbed && nodeLocator) {
+        onError?.("Cannot open file: configure absolute base path for asset");
+        return;
+      }
+      if (isEmbed && !hasSnippet) {
+        onError?.("No code snippet for this entity");
+      }
+    };
+
+    const handlePillClick = (event: MouseEvent) => {
+      event.stopPropagation();
+      runPillAction();
+    };
+
+    const handleRowMainClick = (event: MouseEvent) => {
+      if ((event.target as HTMLElement).closest(".relation-pill")) {
+        return;
+      }
+      if (!primaryInteractive) {
+        return;
+      }
+      event.stopPropagation();
+      runPrimaryAction();
+    };
+
+    const primaryInteractive = primaryIsNavigable || primaryIsSnippetToggle;
+    const pillInteractive = pillIsNavigable || pillIsSnippetToggle;
 
     return (
       <div
@@ -640,27 +753,52 @@ export function CaseLinkedEntitiesPanel({
               <div
                 className={`case-tree-row-button ${hasSnippet && isSnippetExpanded ? "is-active" : ""}`}
               >
-                {displayRelationLabel ? <span className="relation-pill">{displayRelationLabel}</span> : null}
-                <span className="case-tree-row-main">
+                {displayRelationLabel ? (
                   <span
-                    className={`case-tree-entity-label ${canOpenInEditor ? "is-navigable" : ""} ${hasSnippet ? "is-snippet-toggle" : ""}`}
-                    role={hasSnippet || isCheckNode ? "button" : undefined}
-                    tabIndex={hasSnippet || isCheckNode ? 0 : undefined}
-                    title={hasSnippet ? (isSnippetExpanded ? "Hide code context" : "Show code context") : undefined}
-                    onClick={() => {
-                      setFocusedNodeKey(nodeKey);
-                      if (isCheckNode) {
-                        onSelectCheck?.(node.entityId);
-                        return;
-                      }
-                      if (hasSnippet) {
-                        toggleSnippet(nodeKey);
-                      }
-                    }}
+                    className={`relation-pill ${pillInteractive ? "is-pill-action" : ""} ${pillIsNavigable ? "is-navigable" : ""} ${pillIsSnippetToggle ? "is-snippet-toggle" : ""}`}
+                    role={pillInteractive ? "button" : undefined}
+                    tabIndex={pillInteractive ? 0 : undefined}
+                    title={pillInteractive ? pillTitle : undefined}
+                    onClick={pillInteractive ? handlePillClick : undefined}
                   >
-                    {node.displayName || node.label}
+                    {displayRelationLabel}
                   </span>
-                  {node.displayName ? <span className="case-tree-original-label"> | {node.label}</span> : null}
+                ) : null}
+                <span
+                  className={`case-tree-row-main ${primaryInteractive ? "is-primary-action" : ""}`}
+                  role={primaryInteractive ? "button" : undefined}
+                  tabIndex={primaryInteractive ? 0 : undefined}
+                  title={primaryInteractive ? primaryTitle : undefined}
+                  onClick={primaryInteractive ? handleRowMainClick : undefined}
+                  onKeyDown={primaryInteractive ? (event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      runPrimaryAction();
+                    }
+                  } : undefined}
+                >
+                  {node.displayName ? (
+                    <>
+                      <span
+                        className={`case-tree-entity-label case-tree-display-name ${primaryIsNavigable ? "is-navigable" : ""} ${primaryIsSnippetToggle ? "is-snippet-toggle" : ""}`}
+                      >
+                        {node.displayName}
+                      </span>
+                      <span className="case-tree-name-separator"> | </span>
+                      <span
+                        className={`case-tree-entity-label case-tree-original-label ${primaryIsNavigable ? "is-navigable" : ""} ${primaryIsSnippetToggle ? "is-snippet-toggle" : ""}`}
+                      >
+                        {node.label}
+                      </span>
+                    </>
+                  ) : (
+                    <span
+                      className={`case-tree-entity-label ${primaryIsNavigable ? "is-navigable" : ""} ${primaryIsSnippetToggle ? "is-snippet-toggle" : ""}`}
+                    >
+                      {node.label}
+                    </span>
+                  )}
                   {showTrailingTypeLabel ? <span className="small">{node.typeLabel}</span> : null}
                   {isCheckNode && node.status ? <span className="small">· {node.status}</span> : null}
                 </span>

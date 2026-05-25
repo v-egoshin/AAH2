@@ -2,6 +2,7 @@ import * as vscode from "vscode";
 
 import { ReviewContextResponse, ReviewEntity, WorkbenchApiClient } from "../api/client";
 import { getActiveCase, setActiveCase } from "../state/activeCase";
+import { readState } from "../state/assessmentState";
 
 function entityLabel(entity?: ReviewEntity | null) {
   return entity?.title || entity?.name || entity?.kind || entity?.candidate_type || entity?.predicate || "Untitled";
@@ -64,18 +65,13 @@ export class ContextPanel implements vscode.WebviewViewProvider {
     }
     try {
       this.loadingCases = true;
-      const state = vscode.workspace.getConfiguration("appsecWorkbench");
-      const assessmentId = state.get<string>("assessmentId", "");
+      const state = readState();
+      const assessmentId = state.assessmentId;
       if (!assessmentId) {
         this.allCases = [];
         return;
       }
-      const cases = await new WorkbenchApiClient({
-        apiBaseUrl: state.get<string>("apiBaseUrl", "http://localhost:8000/api"),
-        assessmentId,
-        assetId: state.get<string>("assetId", ""),
-        authToken: state.get<string>("authToken", ""),
-      }).listCases();
+      const cases = await new WorkbenchApiClient(state).listCases();
       this.allCases = Array.isArray(cases) ? cases : [];
     } catch {
       this.allCases = [];

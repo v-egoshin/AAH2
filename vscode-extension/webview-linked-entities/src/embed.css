@@ -189,15 +189,49 @@ body.appsec-linked-entities-webview .entity-kind-icon {
   display: block;
 }
 
-body.appsec-linked-entities-webview .case-tree-entity-label.is-navigable {
+body.appsec-linked-entities-webview .case-tree-entity-label.is-navigable,
+body.appsec-linked-entities-webview .relation-pill.is-pill-action.is-navigable {
   cursor: pointer;
   text-decoration: underline;
   text-decoration-color: color-mix(in srgb, var(--vscode-textLink-foreground) 45%, transparent);
   text-underline-offset: 2px;
 }
 
-body.appsec-linked-entities-webview .case-tree-entity-label.is-navigable:hover {
+body.appsec-linked-entities-webview .case-tree-entity-label.is-navigable:hover,
+body.appsec-linked-entities-webview .relation-pill.is-pill-action.is-navigable:hover {
   color: var(--vscode-textLink-activeForeground);
+}
+
+body.appsec-linked-entities-webview .relation-pill.is-pill-action.is-snippet-toggle {
+  cursor: pointer;
+}
+
+body.appsec-linked-entities-webview .relation-pill.is-pill-action.is-snippet-toggle:hover {
+  border-color: var(--vscode-focusBorder);
+  color: var(--vscode-foreground);
+}
+
+body.appsec-linked-entities-webview .case-tree-row-button.is-active .relation-pill.is-snippet-toggle {
+  border-color: var(--vscode-focusBorder);
+  color: var(--vscode-foreground);
+  font-weight: 600;
+}
+
+body.appsec-linked-entities-webview .case-tree-entity-label.is-snippet-toggle {
+  cursor: pointer;
+}
+
+body.appsec-linked-entities-webview .case-tree-name-separator {
+  color: var(--vscode-descriptionForeground);
+}
+
+body.appsec-linked-entities-webview .case-tree-row-main.is-primary-action {
+  cursor: pointer;
+}
+
+body.appsec-linked-entities-webview .case-tree-row-main.is-primary-action:hover .case-tree-entity-label {
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 
 body.appsec-linked-entities-webview .relation-tree-root:focus {
@@ -375,6 +409,28 @@ body.appsec-linked-entities-webview .context-submenu-caret {
 .case-settings-description {
   color: var(--vscode-descriptionForeground);
   font-size: 11px;
+}
+
+.case-settings-danger {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 6px;
+  border-top: 1px solid var(--vscode-widget-border, var(--vscode-panel-border));
+}
+
+.case-settings-delete {
+  height: 24px;
+  padding: 0 8px;
+  color: var(--vscode-button-foreground);
+  background: var(--vscode-errorForeground);
+  border: 1px solid var(--vscode-errorForeground);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.case-settings-delete:disabled {
+  opacity: .45;
+  cursor: default;
 }
 
 .case-picker-graph-error {

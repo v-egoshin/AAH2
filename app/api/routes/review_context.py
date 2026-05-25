@@ -19,19 +19,35 @@ class ReviewContextRequest(BaseModel):
     include_nearby: bool = True
 
 
+def _normalize_file_path(path: str | None) -> str:
+    if not path:
+        return ""
+    normalized = str(path).replace("\\", "/").lstrip("./")
+    return normalized
+
+
+def _file_paths_match(stored: str | None, query: str | None) -> bool:
+    left = _normalize_file_path(stored)
+    right = _normalize_file_path(query)
+    if not left or not right:
+        return not left and not right
+    if left == right:
+        return True
+    return left.endswith(f"/{right}") or right.endswith(f"/{left}")
+
+
 def _locator_matches(locator: str | None, file: str | None, start_line: int | None, end_line: int | None) -> bool:
     if not locator or not file:
         return True
-    if not str(locator).startswith(file):
+    locator_value = str(locator)
+    locator_file = locator_value.split(":", 1)[0]
+    if not _file_paths_match(locator_file, file) and not locator_value.startswith(file):
         return False
     if start_line is None:
         return True
-    suffix = str(locator)[len(file):]
-    if not suffix.startswith(":"):
-        return True
-    parts = suffix.split(":")
+    parts = locator_value.rsplit(":", 2)
     try:
-        locator_line = int(parts[1])
+        locator_line = int(parts[-2] if len(parts) == 3 else parts[-1])
     except (IndexError, ValueError):
         return True
     target_end = end_line or start_line
@@ -90,7 +106,9 @@ def review_context(assessment_id: UUID, payload: ReviewContextRequest) -> dict:
         file_objects = [
             obj
             for obj in all_objects
-            if (obj.range or {}).get("file") == payload.file or (obj.locator or "").startswith(payload.file)
+            if _file_paths_match((obj.range or {}).get("file"), payload.file)
+            or _file_paths_match(str(obj.locator or "").split(":", 1)[0], payload.file)
+            or str(obj.locator or "").startswith(payload.file)
         ]
         nearby_objects = file_objects
         objects = [

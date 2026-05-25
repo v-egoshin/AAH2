@@ -32,3 +32,10 @@ def patch_assessment(assessment_id: UUID, payload: AssessmentUpdate) -> Assessme
     if record is None:
         raise HTTPException(status_code=404, detail="Assessment not found")
     return record
+
+
+@router.delete("/{assessment_id}")
+def delete_assessment(assessment_id: UUID):
+    if not get_store().delete_assessment(assessment_id):
+        raise HTTPException(status_code=404, detail="Assessment not found")
+    return {"ok": True}

@@ -1,9 +1,14 @@
 import * as vscode from "vscode";
 
-import { WorkbenchApiClient } from "../api/client";
+import { AssetRecord, WorkbenchApiClient } from "../api/client";
 import { getActiveCase, setActiveCase } from "../state/activeCase";
 import { readState } from "../state/assessmentState";
 import { loadCaseGraphData, type CaseGraphDataBundle } from "./linkedEntitiesGraphData";
+import {
+  getRepositoryRoot,
+  normalizeRepositoryRoot,
+  relativeFilePathFromUri,
+} from "../lib/assetPath";
 import {
   createCheckFromNode,
   movePartOfRelation,
@@ -16,7 +21,7 @@ function nonce() {
 }
 
 function parseLocator(locator: string) {
-  const match = locator.match(/^(.*?)(?::(\d+))?(?::(\d+))?$/);
+  const match = locator.match(/^(.+?)(?::(\d+))?(?::(\d+))?$/);
   if (!match?.[1]) {
     return null;
   }
@@ -27,33 +32,79 @@ function parseLocator(locator: string) {
   };
 }
 
-async function openLocator(locator: string, projectBasePath?: string) {
-  const target = parseLocator(locator);
-  if (!target) {
+type OpenFileTarget = {
+  filePath: string;
+  line?: number;
+  column?: number;
+};
+
+function resolveOpenTargetPath(
+  filePath: string,
+  line: number,
+  column: number,
+  assetRoot: string,
+  workspaceRoot: string,
+) {
+  const root = assetRoot.trim() || workspaceRoot.trim();
+  const relativeFile = filePath.trim().replace(/^[\\/]+/, "");
+  const isAbsolute = relativeFile.startsWith("/") || /^[A-Za-z]:[\\/]/.test(relativeFile);
+  const absolutePath = isAbsolute
+    ? relativeFile
+    : root
+      ? vscode.Uri.joinPath(vscode.Uri.file(root), ...relativeFile.split(/[\\/]+/).filter(Boolean)).fsPath
+      : relativeFile;
+  return { absolutePath, line, column };
+}
+
+async function openFileTarget(
+  target: OpenFileTarget,
+  assetRoot: string,
+  workspaceRoot: string,
+  label?: string,
+) {
+  const resolved = resolveOpenTargetPath(
+    target.filePath,
+    target.line ?? 1,
+    target.column ?? 1,
+    assetRoot,
+    workspaceRoot,
+  );
+  const uri = vscode.Uri.file(resolved.absolutePath);
+  let doc: vscode.TextDocument;
+  try {
+    doc = await vscode.workspace.openTextDocument(uri);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const detail = label ?? `${target.filePath}${target.line ? `:${target.line}` : ""}`;
+    void vscode.window.showErrorMessage(
+      `AppSec: cannot open ${resolved.absolutePath} (${detail}): ${message}`,
+    );
     return;
   }
-  const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? "";
-  const relativePath = target.file.replace(/^\//, "");
-  const absolutePath = target.file.startsWith("/")
-    ? target.file
-    : projectBasePath
-      ? `${projectBasePath.replace(/\/$/, "")}/${relativePath}`
-      : workspaceRoot
-        ? `${workspaceRoot}/${relativePath}`
-        : target.file;
-  const uri = vscode.Uri.file(absolutePath);
-  const doc = await vscode.workspace.openTextDocument(uri);
   const existingEditor = vscode.window.visibleTextEditors.find((item) => item.document.uri.toString() === uri.toString());
   const editor = await vscode.window.showTextDocument(doc, {
     viewColumn: existingEditor?.viewColumn ?? vscode.ViewColumn.Active,
     preserveFocus: true,
     selection: new vscode.Selection(
-      new vscode.Position(Math.max(0, target.line - 1), Math.max(0, target.column - 1)),
-      new vscode.Position(Math.max(0, target.line - 1), Math.max(0, target.column - 1)),
+      new vscode.Position(Math.max(0, resolved.line - 1), Math.max(0, resolved.column - 1)),
+      new vscode.Position(Math.max(0, resolved.line - 1), Math.max(0, resolved.column - 1)),
     ),
   });
-  const position = new vscode.Position(Math.max(0, target.line - 1), Math.max(0, target.column - 1));
+  const position = new vscode.Position(Math.max(0, resolved.line - 1), Math.max(0, resolved.column - 1));
   editor.revealRange(new vscode.Range(position, position), vscode.TextEditorRevealType.InCenter);
+}
+
+async function openLocatorString(locator: string, assetRoot: string, workspaceRoot: string) {
+  const parsed = parseLocator(locator);
+  if (!parsed) {
+    return;
+  }
+  await openFileTarget(
+    { filePath: parsed.file, line: parsed.line, column: parsed.column },
+    assetRoot,
+    workspaceRoot,
+    locator,
+  );
 }
 
 function apiOrigin(apiBaseUrl: string) {
@@ -69,15 +120,39 @@ function activeEditorLocator() {
   if (!editor) {
     return null;
   }
-  const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? "";
-  const file = workspaceRoot && editor.document.uri.fsPath.startsWith(`${workspaceRoot}/`)
-    ? editor.document.uri.fsPath.slice(workspaceRoot.length + 1)
-    : editor.document.uri.fsPath;
   return {
-    file,
+    file: relativeFilePathFromUri(editor.document.uri),
     startLine: Math.min(editor.selection.start.line, editor.selection.end.line) + 1,
     endLine: Math.max(editor.selection.start.line, editor.selection.end.line) + 1,
   };
+}
+
+function asAssets(value: unknown): AssetRecord[] {
+  return Array.isArray(value) ? value.filter((row): row is AssetRecord => Boolean(row && typeof row === "object" && "id" in row)) : [];
+}
+
+function assetLocatorBasePaths(assets: AssetRecord[], legacyPaths: Record<string, string>) {
+  const result: Record<string, string> = {};
+  for (const [assetId, path] of Object.entries(legacyPaths)) {
+    const normalized = normalizeRepositoryRoot(path);
+    if (normalized) {
+      result[assetId] = normalized;
+    }
+  }
+  for (const asset of assets) {
+    if (asset.id in result) {
+      continue;
+    }
+    const locator = String(asset.locator ?? "").trim();
+    if (locator) {
+      const directory = parseLocator(locator)?.file ?? locator;
+      const normalized = normalizeRepositoryRoot(directory);
+      if (normalized) {
+        result[asset.id] = normalized;
+      }
+    }
+  }
+  return result;
 }
 
 export class LinkedEntitiesPanel implements vscode.WebviewViewProvider {
@@ -120,6 +195,9 @@ export class LinkedEntitiesPanel implements vscode.WebviewViewProvider {
       action?: string;
       payload?: Record<string, unknown>;
       locator?: string;
+      filePath?: string;
+      line?: number;
+      column?: number;
       assetId?: string | null;
       enabled?: boolean;
       id?: string;
@@ -144,14 +222,35 @@ export class LinkedEntitiesPanel implements vscode.WebviewViewProvider {
             await this.handleMutate(webviewView.webview, message.requestId, message.action, message.payload ?? {});
           }
           return;
-        case "openLocator":
-          if (typeof message.locator === "string") {
-            const state = readState();
-            const projectBasePaths = this.readProjectPathsFromWorkspace();
-            const basePath = message.assetId ? projectBasePaths[message.assetId] : projectBasePaths[state.assetId];
-            await openLocator(message.locator, basePath);
+        case "openLocator": {
+          const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? "";
+          const state = readState();
+          const client = this.createApiClient(state);
+          const assessmentId = await client.resolveAssessmentId();
+          const assets = asAssets(await client.listAssets(assessmentId));
+          const resolvedAssetId = message.assetId ?? state.assetId;
+          const asset = resolvedAssetId
+            ? assets.find((row) => row.id === resolvedAssetId)
+            : undefined;
+          const assetRoot = getRepositoryRoot(
+            resolvedAssetId,
+            String(asset?.locator ?? "").trim() || undefined,
+          ) || workspaceRoot.trim();
+          if (typeof message.filePath === "string" && message.filePath.trim()) {
+            await openFileTarget(
+              {
+                filePath: message.filePath,
+                line: typeof message.line === "number" ? message.line : undefined,
+                column: typeof message.column === "number" ? message.column : undefined,
+              },
+              assetRoot,
+              workspaceRoot,
+            );
+          } else if (typeof message.locator === "string") {
+            await openLocatorString(message.locator, assetRoot, workspaceRoot);
           }
           return;
+        }
         case "relationsChanged":
           await vscode.commands.executeCommand("appsecWorkbench.refreshContext");
           void this.pushConfig();
@@ -278,6 +377,17 @@ export class LinkedEntitiesPanel implements vscode.WebviewViewProvider {
           await toggleMarksDeadEnd(client, markIds, isDeadEnd);
           break;
         }
+        case "deleteCase": {
+          const caseId = String(payload.caseId ?? activeCase?.id ?? "");
+          if (!caseId) {
+            throw new Error("Invalid deleteCase payload");
+          }
+          await client.deleteCase(caseId);
+          if (activeCase?.id === caseId) {
+            setActiveCase(null);
+          }
+          break;
+        }
         default:
           throw new Error(`Unknown mutation action: ${action}`);
       }
@@ -322,7 +432,7 @@ export class LinkedEntitiesPanel implements vscode.WebviewViewProvider {
 
   private async buildConfig() {
     const state = readState();
-    const projectBasePaths = this.readProjectPathsFromWorkspace();
+    const legacyProjectBasePaths = this.readProjectPathsFromWorkspace();
     const base = {
       apiBaseUrl: state.apiBaseUrl,
       authToken: state.authToken,
@@ -332,17 +442,17 @@ export class LinkedEntitiesPanel implements vscode.WebviewViewProvider {
       caseTitle: null as string | null,
       caseScopedDecorations: this.caseScopedDecorations,
       activeLocator: activeEditorLocator(),
-      projectBasePaths,
+      projectBasePaths: legacyProjectBasePaths,
+      workspaceRoot: vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? "",
       loadError: undefined as string | undefined,
       graphData: undefined as CaseGraphDataBundle | undefined,
       graphError: undefined as string | undefined,
     };
-    if (!state.assessmentId.trim()) {
-      return { ...base, loadError: "Set appsecWorkbench.assessmentId in settings.", configVersion: ++this.configVersion };
-    }
     const client = this.createApiClient(state);
     try {
       const resolved = await client.resolveIds();
+      const assets = asAssets(await client.listAssets(resolved.assessmentId));
+      const projectBasePaths = assetLocatorBasePaths(assets, legacyProjectBasePaths);
       const graph = await this.loadGraphData(client);
       const cases = (graph.graphData?.rows ?? [])
         .map((row) => row as { id?: string; title?: string; status?: string; asset_id?: string | null })
@@ -371,6 +481,7 @@ export class LinkedEntitiesPanel implements vscode.WebviewViewProvider {
         caseStatus: cases.find((row) => row.id === scopedActiveCase?.id)?.status ?? null,
         cases,
         graphData: graph.graphData,
+        projectBasePaths,
         graphError: graph.graphError,
         configVersion: ++this.configVersion,
       };

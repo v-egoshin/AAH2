@@ -4,6 +4,7 @@ import { CaseRecord } from "../api/client";
 import { useWorkbench } from "../app/workbench";
 import { Field, InlineEditableText } from "../components/common";
 import { ModalGlyph, ModalShell } from "../components/modal";
+import { buildEditorUrl, buildEditorUrlForTarget } from "../lib/assetPath";
 import { CaseLinkedEntitiesPanel } from "../features/case-linked-entities/CaseLinkedEntitiesPanel";
 import { shortId, useSelectedIdParam } from "./utils";
 
@@ -41,7 +42,7 @@ function noteIcon() {
 }
 
 export function CasesPage() {
-  const { api, selectedAssessmentId } = useWorkbench();
+  const { api, selectedAssessmentId, selectedAssetId, getProjectBasePathForAsset } = useWorkbench();
   const [rows, setRows] = useState<CaseRecord[]>([]);
   const [selectedId, setSelectedId] = useSelectedIdParam();
   const [error, setError] = useState("");
@@ -243,6 +244,24 @@ export function CasesPage() {
         variant="page"
         refreshToken={graphRefreshToken}
         onError={setError}
+        onOpenLocator={(target, assetId) => {
+          const basePath = getProjectBasePathForAsset(assetId);
+          const url = typeof target === "string"
+            ? buildEditorUrl(basePath, target)
+            : buildEditorUrlForTarget(target, basePath);
+          if (url) {
+            window.open(url, "_blank", "noopener,noreferrer");
+            return;
+          }
+          const label = typeof target === "string"
+            ? target
+            : `${target.filePath}${target.line ? `:${target.line}` : ""}`;
+          setError(
+            basePath.trim()
+              ? `Cannot open ${label} in editor (check path: ${basePath})`
+              : `Cannot open ${label}: set repository locator on asset`,
+          );
+        }}
         onGraphMutated={() => {
           setGraphRefreshToken((current) => current + 1);
         }}
@@ -263,8 +282,13 @@ export function CasesPage() {
                 setError("Select assessment first");
                 return;
               }
+              if (!selectedAssetId) {
+                setError("Select asset first");
+                return;
+              }
               await api.createCase(selectedAssessmentId, {
                 title: createDraft.title,
+                asset_id: selectedAssetId,
                 description: createDraft.description,
               });
               setIsCreateOpen(false);

@@ -34,3 +34,10 @@ def patch_asset(asset_id: UUID, payload: AssetUpdate) -> AssetRead:
     if asset is None:
         raise HTTPException(status_code=404, detail="Asset not found")
     return asset
+
+
+@router.delete("/api/assets/{asset_id}")
+def delete_asset(asset_id: UUID):
+    if not get_store().delete_asset(asset_id):
+        raise HTTPException(status_code=404, detail="Asset not found")
+    return {"ok": True}

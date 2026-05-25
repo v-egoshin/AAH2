@@ -37,6 +37,7 @@ exports.ContextPanel = void 0;
 const vscode = __importStar(require("vscode"));
 const client_1 = require("../api/client");
 const activeCase_1 = require("../state/activeCase");
+const assessmentState_1 = require("../state/assessmentState");
 function entityLabel(entity) {
     return entity?.title || entity?.name || entity?.kind || entity?.candidate_type || entity?.predicate || "Untitled";
 }
@@ -90,18 +91,13 @@ class ContextPanel {
         }
         try {
             this.loadingCases = true;
-            const state = vscode.workspace.getConfiguration("appsecWorkbench");
-            const assessmentId = state.get("assessmentId", "");
+            const state = (0, assessmentState_1.readState)();
+            const assessmentId = state.assessmentId;
             if (!assessmentId) {
                 this.allCases = [];
                 return;
             }
-            const cases = await new client_1.WorkbenchApiClient({
-                apiBaseUrl: state.get("apiBaseUrl", "http://localhost:8000/api"),
-                assessmentId,
-                assetId: state.get("assetId", ""),
-                authToken: state.get("authToken", ""),
-            }).listCases();
+            const cases = await new client_1.WorkbenchApiClient(state).listCases();
             this.allCases = Array.isArray(cases) ? cases : [];
         }
         catch {

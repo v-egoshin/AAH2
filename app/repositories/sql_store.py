@@ -155,6 +155,7 @@ class SqlStore:
             {
                 "id": record.id,
                 "assessment_id": record.assessment_id,
+                "asset_id": record.asset_id,
                 "title": record.title,
                 "description": record.description,
                 "status": record.status,
@@ -247,6 +248,26 @@ class SqlStore:
             db.refresh(record)
             return self._assessment_to_schema(record)
 
+    def delete_assessment(self, assessment_id: UUID) -> bool:
+        assessment_key = str(assessment_id)
+        with get_session() as db:
+            record = db.get(AssessmentORM, assessment_key)
+            if record is None:
+                return False
+            db.query(RelationORM).filter(RelationORM.assessment_id == assessment_key).delete(synchronize_session=False)
+            db.query(EvidenceORM).filter(EvidenceORM.assessment_id == assessment_key).delete(synchronize_session=False)
+            db.query(FindingORM).filter(FindingORM.assessment_id == assessment_key).delete(synchronize_session=False)
+            db.query(CaseORM).filter(CaseORM.assessment_id == assessment_key).delete(synchronize_session=False)
+            db.query(CheckORM).filter(CheckORM.assessment_id == assessment_key).delete(synchronize_session=False)
+            db.query(MarkORM).filter(MarkORM.assessment_id == assessment_key).delete(synchronize_session=False)
+            db.query(ObjectORM).filter(ObjectORM.assessment_id == assessment_key).delete(synchronize_session=False)
+            db.query(CandidateORM).filter(CandidateORM.assessment_id == assessment_key).delete(synchronize_session=False)
+            db.query(ImportBatchORM).filter(ImportBatchORM.assessment_id == assessment_key).delete(synchronize_session=False)
+            db.query(AssetORM).filter(AssetORM.assessment_id == assessment_key).delete(synchronize_session=False)
+            db.delete(record)
+            db.commit()
+            return True
+
     def create_asset(self, assessment_id: UUID, payload: AssetCreate) -> AssetRead:
         with get_session() as db:
             record = AssetORM(
@@ -282,6 +303,35 @@ class SqlStore:
             db.commit()
             db.refresh(record)
             return self._asset_to_schema(record)
+
+    def delete_asset(self, asset_id: UUID) -> bool:
+        asset_key = str(asset_id)
+        with get_session() as db:
+            record = db.get(AssetORM, asset_key)
+            if record is None:
+                return False
+            import_ids = {row.id for row in db.query(ImportBatchORM.id).filter(ImportBatchORM.asset_id == asset_key).all()}
+            object_ids = {row.id for row in db.query(ObjectORM.id).filter(ObjectORM.asset_id == asset_key).all()}
+            mark_ids = {
+                row.id
+                for row in db.query(MarkORM.id).filter(MarkORM.object_id.in_(object_ids)).all()
+            } if object_ids else set()
+            target_ids = {asset_key, *import_ids, *object_ids, *mark_ids}
+            if target_ids:
+                db.query(RelationORM).filter(
+                    (RelationORM.subject_id.in_(target_ids))
+                    | (RelationORM.object_id.in_(target_ids))
+                ).delete(synchronize_session=False)
+            if import_ids:
+                db.query(CandidateORM).filter(CandidateORM.import_batch_id.in_(import_ids)).delete(synchronize_session=False)
+                db.query(ImportBatchORM).filter(ImportBatchORM.id.in_(import_ids)).delete(synchronize_session=False)
+            if mark_ids:
+                db.query(MarkORM).filter(MarkORM.id.in_(mark_ids)).delete(synchronize_session=False)
+            if object_ids:
+                db.query(ObjectORM).filter(ObjectORM.id.in_(object_ids)).delete(synchronize_session=False)
+            db.delete(record)
+            db.commit()
+            return True
 
     def create_import(self, assessment_id: UUID, payload: ImportCreate):
         with get_session() as db:
@@ -560,7 +610,9 @@ class SqlStore:
 
     def create_case(self, assessment_id: UUID, payload: CaseCreate) -> CaseRead:
         with get_session() as db:
-            record = CaseORM(assessment_id=str(assessment_id), **payload.model_dump())
+            values = payload.model_dump()
+            values["asset_id"] = str(values["asset_id"])
+            record = CaseORM(assessment_id=str(assessment_id), **values)
             db.add(record)
             db.commit()
             db.refresh(record)
@@ -587,10 +639,23 @@ class SqlStore:
             if record is None:
                 return None
             for key, value in payload.model_dump(exclude_unset=True).items():
-                setattr(record, key, value)
+                setattr(record, key, str(value) if key == "asset_id" and value is not None else value)
             db.commit()
             db.refresh(record)
             return self._case_to_schema(record)
+
+    def delete_case(self, case_id: UUID) -> bool:
+        case_key = str(case_id)
+        with get_session() as db:
+            record = db.get(CaseORM, case_key)
+            if record is None:
+                return False
+            db.query(RelationORM).filter(
+                (RelationORM.subject_id == case_key) | (RelationORM.object_id == case_key),
+            ).delete(synchronize_session=False)
+            db.delete(record)
+            db.commit()
+            return True
 
     def create_finding(self, assessment_id: UUID, payload: FindingCreate) -> FindingRead:
         with get_session() as db:

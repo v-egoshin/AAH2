@@ -43,6 +43,8 @@ const log_1 = require("../log");
 const activeCase_1 = require("../state/activeCase");
 const assessmentState_1 = require("../state/assessmentState");
 const recentMarks_1 = require("../state/recentMarks");
+const assetPath_1 = require("../lib/assetPath");
+const markDescriptionWidget_1 = require("../views/markDescriptionWidget");
 function normalizeTitle(value) {
     return value.replace(/\s+/g, " ").trim().slice(0, 120);
 }
@@ -160,12 +162,13 @@ function targetFromEditorLine(editor, line) {
     if (!title) {
         return null;
     }
+    const file = (0, assetPath_1.relativeFilePathFromUri)(editor.document.uri);
     return {
-        file: vscode.workspace.asRelativePath(editor.document.uri),
+        file,
         startLine: boundedLine + 1,
         endLine: boundedLine + 1,
         title,
-        locator: `${vscode.workspace.asRelativePath(editor.document.uri)}:${boundedLine + 1}`,
+        locator: `${file}:${boundedLine + 1}`,
         selectedText: text,
         selectionStartOffset: editor.document.offsetAt(documentLine.range.start),
         selectionEndOffset: editor.document.offsetAt(documentLine.range.end),
@@ -247,7 +250,7 @@ function objectPayloadFromTarget(kind, target, contextSnippet, contextStartLine,
 }
 function getSelectionTarget(editor) {
     const selection = editor.selection;
-    const file = vscode.workspace.asRelativePath(editor.document.uri);
+    const file = (0, assetPath_1.relativeFilePathFromUri)(editor.document.uri);
     let text = editor.document.getText(selection);
     let range = selection;
     if (!text.trim()) {
@@ -311,7 +314,7 @@ function pickTightestContainer(symbols, startLine, endLine) {
     return best;
 }
 async function getMarkContext(editor, target) {
-    const padding = Math.max(0, vscode.workspace.getConfiguration("appsecWorkbench").get("markContextPadding", 10));
+    const padding = 10;
     const startLine = target.startLine - 1;
     const endLine = target.endLine - 1;
     let lowerBound = 0;
@@ -346,6 +349,7 @@ async function getMarkContext(editor, target) {
 }
 async function refreshContext(provider) {
     await vscode.commands.executeCommand("appsecWorkbench.refreshContext");
+    await vscode.commands.executeCommand("appsecWorkbench.refreshLinkedEntities");
     provider.refresh();
 }
 async function linkEntityToActiveCase(api, entityType, entityId) {
@@ -525,6 +529,27 @@ async function toggleCurrentMarkDeadEnd(provider, explicitTarget) {
     await api.updateMark(mark.id, { is_dead_end: nextValue });
     vscode.window.showInformationMessage(nextValue ? "AppSec: marked as dead end" : "AppSec: dead-end mark removed");
     await refreshContext(provider);
+}
+async function setMarkDescriptionFromSelection(provider, explicitTarget) {
+    const editor = vscode.window.activeTextEditor;
+    if (!editor) {
+        return;
+    }
+    const target = explicitTarget ?? getSelectionTarget(editor);
+    if (!target) {
+        vscode.window.showWarningMessage("AppSec: no selection target on this line");
+        return;
+    }
+    const mark = currentMark(getScopedPayload(provider, target));
+    if (!mark) {
+        vscode.window.showWarningMessage("AppSec: no mark on this line");
+        return;
+    }
+    (0, markDescriptionWidget_1.showMarkDescriptionEditor)(editor, target.startLine - 1, mark.note ?? "", mark.id, async (text) => {
+        const api = new client_1.WorkbenchApiClient((0, assessmentState_1.readState)());
+        await api.updateMark(mark.id, { note: text });
+        await refreshContext(provider);
+    }, () => { });
 }
 async function removeCurrentMark(provider, explicitTarget) {
     const editor = vscode.window.activeTextEditor;
@@ -900,12 +925,11 @@ class SelectionActionCodeLensProvider {
         if (followUp) {
             return [
                 makeLens(`${followUp.kind} marked`, "appsecWorkbench.dismissFollowUp"),
-                makeLens("Recent…", "appsecWorkbench.showRecentMarkActions", [target]),
+                makeLens("Set Description", "appsecWorkbench.setMarkDescriptionFromSelection", [target]),
                 makeLens("Create Case", "appsecWorkbench.createCaseFromContext", [target]),
                 makeLens(activeCase?.id
                     ? (markInActiveCase ? `In Active Case: ${activeCase.title}` : `Add to Active Case: ${activeCase.title}`)
                     : "Set Active Case first", markInActiveCase || !activeCase?.id ? "appsecWorkbench.refreshContext" : "appsecWorkbench.addCurrentMarkToActiveCase"),
-                makeLens("Create Check", "appsecWorkbench.createCheckFromSelection", [target]),
                 makeLens("Remove Mark", "appsecWorkbench.removeCurrentMark", [target]),
                 makeLens("Dismiss", "appsecWorkbench.dismissFollowUp"),
             ];
@@ -917,7 +941,6 @@ class SelectionActionCodeLensProvider {
                 makeLens(`Accept ${kind ?? "Candidate"}${candidate?.source ? `: ${candidate.source}` : ""}`, "appsecWorkbench.acceptCandidate", [candidate]),
                 makeLens("Reject", "appsecWorkbench.rejectCandidate", [candidate]),
                 makeLens("Create Case", "appsecWorkbench.createCaseFromContext", [target]),
-                makeLens("Create Check", "appsecWorkbench.createCheckFromSelection", [target]),
             ];
         }
         if (check) {
@@ -939,12 +962,11 @@ class SelectionActionCodeLensProvider {
         if (mark) {
             return [
                 makeLens(`${mark.kind} marked`, "appsecWorkbench.refreshContext"),
-                makeLens("Recent…", "appsecWorkbench.showRecentMarkActions", [target]),
+                makeLens("Set Description", "appsecWorkbench.setMarkDescriptionFromSelection", [target]),
                 makeLens("Create Case", "appsecWorkbench.createCaseFromContext", [target]),
                 makeLens(activeCase?.id
                     ? (markInActiveCase ? `In Active Case: ${activeCase.title}` : `Add to Active Case: ${activeCase.title}`)
                     : "Set Active Case first", markInActiveCase || !activeCase?.id ? "appsecWorkbench.refreshContext" : "appsecWorkbench.addCurrentMarkToActiveCase"),
-                makeLens("Create Check", "appsecWorkbench.createCheckFromSelection", [target]),
                 makeLens(mark.is_dead_end ? "Remove dead end" : "Dead end", "appsecWorkbench.toggleMarkDeadEnd", [target]),
                 makeLens("Remove Mark", "appsecWorkbench.removeCurrentMark", [target]),
             ];
@@ -955,7 +977,6 @@ class SelectionActionCodeLensProvider {
             makeLens("Sink", "appsecWorkbench.markSink", [target]),
             makeLens("Guard", "appsecWorkbench.markGuard", [target]),
             makeLens("Transform", "appsecWorkbench.markTransform", [target]),
-            makeLens("Create Check", "appsecWorkbench.createCheckFromSelection", [target]),
             makeLens("More…", "appsecWorkbench.showSelectionActions", [target]),
         ];
     }
@@ -1082,6 +1103,7 @@ function registerMarkCommands(context, codeLensProvider, recentMarksPanel) {
     context.subscriptions.push(vscode.commands.registerCommand("appsecWorkbench.createCaseFromContext", async (...args) => createCaseFromContext(codeLensProvider, undefined, selectionTargetFromCommandArgs(args))));
     context.subscriptions.push(vscode.commands.registerCommand("appsecWorkbench.removeCurrentMark", async (...args) => removeCurrentMark(codeLensProvider, selectionTargetFromCommandArgs(args))));
     context.subscriptions.push(vscode.commands.registerCommand("appsecWorkbench.toggleMarkDeadEnd", async (...args) => toggleCurrentMarkDeadEnd(codeLensProvider, selectionTargetFromCommandArgs(args))));
+    context.subscriptions.push(vscode.commands.registerCommand("appsecWorkbench.setMarkDescriptionFromSelection", async (...args) => setMarkDescriptionFromSelection(codeLensProvider, selectionTargetFromCommandArgs(args))));
     context.subscriptions.push(vscode.commands.registerCommand("appsecWorkbench.addCurrentMarkToActiveCase", async () => addCurrentMarkToActiveCase(codeLensProvider)));
     context.subscriptions.push(vscode.commands.registerCommand("appsecWorkbench.addCurrentCheckToActiveCase", async () => addCurrentCheckToActiveCase(codeLensProvider)));
     context.subscriptions.push(vscode.commands.registerCommand("appsecWorkbench.addRecentMarkToActiveCase", async (recentId) => addRecentMarkToActiveCase(codeLensProvider, recentId)));

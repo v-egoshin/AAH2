@@ -47,15 +47,14 @@ function registerAssessmentCommands(context) {
             return;
         const api = new client_1.WorkbenchApiClient((0, assessmentState_1.readState)());
         const existing = await api.findAssessmentByName(trimmedTitle);
-        const cfg = vscode.workspace.getConfiguration("appsecWorkbench");
         if (existing) {
-            await cfg.update("assessmentId", trimmedTitle, vscode.ConfigurationTarget.Workspace);
+            await (0, assessmentState_1.updateAssessmentState)({ assessmentId: existing.id });
             vscode.window.showInformationMessage(`AppSec: using existing assessment ${existing.title} (${existing.id})`);
             return;
         }
         const description = (await vscode.window.showInputBox({ prompt: "Assessment description", value: "" })) ?? "";
         const created = await api.createAssessment({ title: trimmedTitle, description });
-        await cfg.update("assessmentId", trimmedTitle, vscode.ConfigurationTarget.Workspace);
+        await (0, assessmentState_1.updateAssessmentState)({ assessmentId: created.id });
         vscode.window.showInformationMessage(`AppSec: assessment created: ${created.title} (${created.id})`);
     }));
 }

@@ -1,40 +1,7 @@
 "use strict";
-var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    var desc = Object.getOwnPropertyDescriptor(m, k);
-    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
-      desc = { enumerable: true, get: function() { return m[k]; } };
-    }
-    Object.defineProperty(o, k2, desc);
-}) : (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    o[k2] = m[k];
-}));
-var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
-    Object.defineProperty(o, "default", { enumerable: true, value: v });
-}) : function(o, v) {
-    o["default"] = v;
-});
-var __importStar = (this && this.__importStar) || (function () {
-    var ownKeys = function(o) {
-        ownKeys = Object.getOwnPropertyNames || function (o) {
-            var ar = [];
-            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
-            return ar;
-        };
-        return ownKeys(o);
-    };
-    return function (mod) {
-        if (mod && mod.__esModule) return mod;
-        var result = {};
-        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
-        __setModuleDefault(result, mod);
-        return result;
-    };
-})();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.WorkbenchApiClient = void 0;
-const vscode = __importStar(require("vscode"));
+const assessmentState_1 = require("../state/assessmentState");
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 function normalizeLookup(value) {
     return value.trim().toLowerCase();
@@ -93,35 +60,41 @@ class WorkbenchApiClient {
     }
     async resolveAssessmentId() {
         const raw = this.cfg.assessmentId.trim();
-        if (!raw) {
-            throw new Error("Set appsecWorkbench.assessmentId first");
-        }
-        if (UUID_RE.test(raw)) {
-            return raw;
-        }
-        const found = await this.findAssessmentByName(raw);
-        if (found) {
-            return found.id;
-        }
         const assessments = await this.listAssessments();
+        if (!assessments.length) {
+            throw new Error("Create assessment first");
+        }
+        if (raw) {
+            if (UUID_RE.test(raw) && assessments.some((item) => item.id === raw)) {
+                return raw;
+            }
+            const lookup = normalizeLookup(raw);
+            const found = assessments.find((item) => normalizeLookup(item.title) === lookup || item.id === raw);
+            if (found) {
+                return found.id;
+            }
+        }
         if (assessments.length === 1) {
             const fallback = assessments[0];
-            await vscode.workspace.getConfiguration("appsecWorkbench").update("assessmentId", fallback.title, vscode.ConfigurationTarget.Workspace);
+            await (0, assessmentState_1.updateAssessmentState)({ assessmentId: fallback.id });
             this.cfg.assessmentId = fallback.title;
             return fallback.id;
         }
-        throw new Error(`Assessment not found for setting: ${raw}`);
+        throw new Error("Select assessment.");
     }
     async resolveAssetId(assessmentId) {
         const raw = this.cfg.assetId.trim();
-        if (!raw) {
+        const assets = await this.listAssets(assessmentId);
+        if (!assets.length) {
             return "";
         }
-        if (UUID_RE.test(raw)) {
+        if (!raw) {
+            return assets[0].id;
+        }
+        if (UUID_RE.test(raw) && assets.some((item) => item.id === raw)) {
             return raw;
         }
         const lookup = normalizeLookup(raw);
-        const assets = await this.listAssets(assessmentId);
         const exact = assets.find((item) => normalizeLookup(item.name) === lookup || normalizeLookup(`${item.name} (${item.id.slice(0, 8)})`) === lookup);
         if (exact) {
             return exact.id;
@@ -133,7 +106,7 @@ class WorkbenchApiClient {
         if (partial.length > 1) {
             throw new Error(`Asset setting is ambiguous: ${raw}`);
         }
-        throw new Error(`Asset not found for setting: ${raw}`);
+        return assets[0].id;
     }
     async getResolvedConfig() {
         if (!this.resolvedConfig) {
@@ -159,8 +132,11 @@ class WorkbenchApiClient {
             body: JSON.stringify(payload),
         });
     }
-    async deleteAssessment(_assessmentId) {
-        throw new Error("Deleting assessments is not supported by the API.");
+    async deleteAssessment(assessmentId) {
+        return this.request(`/assessments/${assessmentId}`, {
+            method: "DELETE",
+            headers: this.headers(),
+        });
     }
     async resolveIds() {
         return this.getResolvedConfig();
@@ -179,8 +155,11 @@ class WorkbenchApiClient {
             body: JSON.stringify(payload),
         });
     }
-    async deleteAsset(_assetId) {
-        throw new Error("Deleting assets is not supported by the API.");
+    async deleteAsset(assetId) {
+        return this.request(`/assets/${assetId}`, {
+            method: "DELETE",
+            headers: this.headers(),
+        });
     }
     async listCases() {
         const resolved = await this.getResolvedConfig();
@@ -194,6 +173,12 @@ class WorkbenchApiClient {
             method: "PATCH",
             headers: this.headers(),
             body: JSON.stringify(payload),
+        });
+    }
+    async deleteCase(caseId) {
+        return this.request(`/cases/${caseId}`, {
+            method: "DELETE",
+            headers: this.headers(),
         });
     }
     async getReviewContext(file, line) {
@@ -298,10 +283,13 @@ class WorkbenchApiClient {
     }
     async createCase(payload) {
         const resolved = await this.getResolvedConfig();
+        if (!resolved.assetId && !payload.asset_id) {
+            throw new Error("Select asset first");
+        }
         return this.request(`/assessments/${resolved.assessmentId}/cases`, {
             method: "POST",
             headers: this.headers(),
-            body: JSON.stringify(payload),
+            body: JSON.stringify({ asset_id: resolved.assetId, ...payload }),
         });
     }
     async listFindings() {

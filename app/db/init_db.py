@@ -44,7 +44,21 @@ def _ensure_mark_columns() -> None:
             connection.execute(text(statement))
 
 
+def _ensure_case_columns() -> None:
+    inspector = inspect(engine)
+    if "cases" not in inspector.get_table_names():
+        return
+    statements = [
+        "ALTER TABLE cases ADD COLUMN IF NOT EXISTS asset_id VARCHAR(36)",
+        "CREATE INDEX IF NOT EXISTS ix_cases_asset_id ON cases (asset_id)",
+    ]
+    with engine.begin() as connection:
+        for statement in statements:
+            connection.execute(text(statement))
+
+
 def init_db() -> None:
     Base.metadata.create_all(bind=engine)
     _ensure_check_columns()
     _ensure_mark_columns()
+    _ensure_case_columns()

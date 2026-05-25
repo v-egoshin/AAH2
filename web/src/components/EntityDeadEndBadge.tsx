@@ -6,9 +6,9 @@ export function EntityDeadEndBadge({ inherited }: { inherited?: boolean }) {
       className={`entity-dead-end-badge ${inherited ? "is-inherited" : ""}`}
       src={deadEndIcon}
       alt=""
-      title={inherited ? "Dead end (inherited)" : "Dead end"}
-      width={12}
-      height={12}
+      title={inherited ? "Inherited dead end" : "Dead end: no exploitable path"}
+      width={14}
+      height={14}
     />
   );
 }

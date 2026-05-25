@@ -46,7 +46,9 @@ const recentMarks_1 = require("./state/recentMarks");
 const checks2Panel_1 = require("./views/checks2Panel");
 const contextPanel_1 = require("./views/contextPanel");
 const linkedEntitiesPanel_1 = require("./views/linkedEntitiesPanel");
+const assetPath_1 = require("./lib/assetPath");
 const markDecorations_1 = require("./views/markDecorations");
+const markDescriptionWidget_1 = require("./views/markDescriptionWidget");
 function parseEntityTarget(entity) {
     const locator = entity.locator || "";
     const match = locator.match(/^(.*?)(?::(\d+))?(?::(\d+))?$/);
@@ -61,6 +63,7 @@ function parseEntityTarget(entity) {
 }
 function activate(context) {
     (0, log_1.log)("Extension activated");
+    (0, assessmentState_1.configureAssessmentStateStorage)(context.workspaceState);
     (0, activeCase_1.configureActiveCaseStorage)(context.workspaceState);
     const panel = new contextPanel_1.ContextPanel();
     panel.register(context);
@@ -72,6 +75,8 @@ function activate(context) {
     const markDecorations = new markDecorations_1.MarkDecorations(context);
     context.subscriptions.push({ dispose: () => markDecorations.dispose() });
     const codeLensProvider = new mark_1.SelectionActionCodeLensProvider();
+    (0, markDescriptionWidget_1.initializeMarkDescriptionController)(context);
+    context.subscriptions.push({ dispose: () => (0, markDescriptionWidget_1.disposeMarkDescriptionEditor)() });
     (0, assessment_1.registerAssessmentCommands)(context);
     (0, mark_1.registerMarkCommands)(context, codeLensProvider, recentMarksPanel);
     let refreshTimer;
@@ -89,7 +94,7 @@ function activate(context) {
             (0, log_1.log)("Refresh skipped: assessmentId is empty");
             return;
         }
-        const file = vscode.workspace.asRelativePath(editor.document.uri);
+        const file = (0, assetPath_1.relativeFilePathFromUri)(editor.document.uri);
         const line = editor.selection.active.line + 1;
         const refreshKey = `${file}:${line}`;
         if (!force && (refreshKey === inFlightRefreshKey || refreshKey === lastAppliedRefreshKey)) {

@@ -60,6 +60,22 @@ class InMemoryStore:
             return None
         return _apply_patch(record, payload.model_dump(exclude_unset=True))
 
+    def delete_assessment(self, assessment_id: UUID) -> bool:
+        if assessment_id not in self.assessments:
+            return False
+        self.assessments.pop(assessment_id, None)
+        self.assets = {key: value for key, value in self.assets.items() if value.assessment_id != assessment_id}
+        self.imports = {key: value for key, value in self.imports.items() if value.assessment_id != assessment_id}
+        self.candidates = {key: value for key, value in self.candidates.items() if value.assessment_id != assessment_id}
+        self.objects = {key: value for key, value in self.objects.items() if value.assessment_id != assessment_id}
+        self.marks = {key: value for key, value in self.marks.items() if value.assessment_id != assessment_id}
+        self.checks = {key: value for key, value in self.checks.items() if value.assessment_id != assessment_id}
+        self.cases = {key: value for key, value in self.cases.items() if value.assessment_id != assessment_id}
+        self.findings = {key: value for key, value in self.findings.items() if value.assessment_id != assessment_id}
+        self.evidence = {key: value for key, value in self.evidence.items() if value.assessment_id != assessment_id}
+        self.relations = {key: value for key, value in self.relations.items() if value.assessment_id != assessment_id}
+        return True
+
     def create_asset(self, assessment_id: UUID, payload: AssetCreate) -> AssetRead:
         record = AssetRead(assessment_id=assessment_id, **payload.model_dump())
         self.assets[record.id] = record
@@ -76,6 +92,25 @@ class InMemoryStore:
         if not record:
             return None
         return _apply_patch(record, payload.model_dump(exclude_unset=True))
+
+    def delete_asset(self, asset_id: UUID) -> bool:
+        if asset_id not in self.assets:
+            return False
+        self.assets.pop(asset_id, None)
+        import_ids = {key for key, value in self.imports.items() if value.asset_id == asset_id}
+        object_ids = {key for key, value in self.objects.items() if value.asset_id == asset_id}
+        mark_ids = {key for key, value in self.marks.items() if value.object_id in object_ids}
+        target_ids = {asset_id, *import_ids, *object_ids, *mark_ids}
+        self.imports = {key: value for key, value in self.imports.items() if key not in import_ids}
+        self.candidates = {key: value for key, value in self.candidates.items() if value.import_batch_id not in import_ids}
+        self.objects = {key: value for key, value in self.objects.items() if key not in object_ids}
+        self.marks = {key: value for key, value in self.marks.items() if key not in mark_ids}
+        self.relations = {
+            key: value
+            for key, value in self.relations.items()
+            if value.subject_id not in target_ids and value.object_id not in target_ids
+        }
+        return True
 
     def create_import(self, assessment_id: UUID, payload: ImportCreate) -> tuple[ImportBatchRead, list[CandidateRead]]:
         batch = ImportBatchRead(
@@ -280,6 +315,17 @@ class InMemoryStore:
         if not record:
             return None
         return _apply_patch(record, payload.model_dump(exclude_unset=True))
+
+    def delete_case(self, case_id: UUID) -> bool:
+        if case_id not in self.cases:
+            return False
+        self.cases.pop(case_id, None)
+        self.relations = {
+            key: value
+            for key, value in self.relations.items()
+            if value.subject_id != case_id and value.object_id != case_id
+        }
+        return True
 
     def create_finding(self, assessment_id: UUID, payload: FindingCreate) -> FindingRead:
         record = FindingRead(assessment_id=assessment_id, **payload.model_dump())

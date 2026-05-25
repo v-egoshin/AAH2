@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import { updateAssessmentState } from "../state/assessmentState";
 
 export type WorkbenchConfig = {
   apiBaseUrl: string;
@@ -21,6 +22,10 @@ export type AssessmentRecord = {
 export type AssetRecord = {
   id: string;
   name: string;
+  type?: string;
+  locator?: string | null;
+  version_ref?: string | null;
+  metadata?: Record<string, unknown> | null;
 };
 
 export type ReviewEntity = {
@@ -143,38 +148,43 @@ export class WorkbenchApiClient {
 
   async resolveAssessmentId(): Promise<string> {
     const raw = this.cfg.assessmentId.trim();
-    if (!raw) {
-      throw new Error("Set appsecWorkbench.assessmentId first");
-    }
-    if (UUID_RE.test(raw)) {
-      return raw;
-    }
-
-    const found = await this.findAssessmentByName(raw);
-    if (found) {
-      return found.id;
-    }
     const assessments = await this.listAssessments();
+    if (!assessments.length) {
+      throw new Error("Create assessment first");
+    }
+    if (raw) {
+      if (UUID_RE.test(raw) && assessments.some((item) => item.id === raw)) {
+        return raw;
+      }
+      const lookup = normalizeLookup(raw);
+      const found = assessments.find((item) => normalizeLookup(item.title) === lookup || item.id === raw);
+      if (found) {
+        return found.id;
+      }
+    }
     if (assessments.length === 1) {
       const fallback = assessments[0];
-      await vscode.workspace.getConfiguration("appsecWorkbench").update("assessmentId", fallback.title, vscode.ConfigurationTarget.Workspace);
+      await updateAssessmentState({ assessmentId: fallback.id });
       this.cfg.assessmentId = fallback.title;
       return fallback.id;
     }
-    throw new Error(`Assessment not found for setting: ${raw}`);
+    throw new Error("Select assessment.");
   }
 
   async resolveAssetId(assessmentId: string): Promise<string> {
     const raw = this.cfg.assetId.trim();
-    if (!raw) {
+    const assets = await this.listAssets(assessmentId);
+    if (!assets.length) {
       return "";
     }
-    if (UUID_RE.test(raw)) {
+    if (!raw) {
+      return assets[0].id;
+    }
+    if (UUID_RE.test(raw) && assets.some((item) => item.id === raw)) {
       return raw;
     }
 
     const lookup = normalizeLookup(raw);
-    const assets = await this.listAssets(assessmentId);
     const exact = assets.find((item) => normalizeLookup(item.name) === lookup || normalizeLookup(`${item.name} (${item.id.slice(0, 8)})`) === lookup);
     if (exact) {
       return exact.id;
@@ -188,7 +198,7 @@ export class WorkbenchApiClient {
       throw new Error(`Asset setting is ambiguous: ${raw}`);
     }
 
-    throw new Error(`Asset not found for setting: ${raw}`);
+    return assets[0].id;
   }
 
   private async getResolvedConfig(): Promise<ResolvedConfig> {
@@ -218,8 +228,11 @@ export class WorkbenchApiClient {
     });
   }
 
-  async deleteAssessment(_assessmentId: string) {
-    throw new Error("Deleting assessments is not supported by the API.");
+  async deleteAssessment(assessmentId: string) {
+    return this.request(`/assessments/${assessmentId}`, {
+      method: "DELETE",
+      headers: this.headers(),
+    });
   }
 
   async resolveIds(): Promise<ResolvedConfig> {
@@ -242,8 +255,11 @@ export class WorkbenchApiClient {
     });
   }
 
-  async deleteAsset(_assetId: string) {
-    throw new Error("Deleting assets is not supported by the API.");
+  async deleteAsset(assetId: string) {
+    return this.request(`/assets/${assetId}`, {
+      method: "DELETE",
+      headers: this.headers(),
+    });
   }
 
   async listCases() {
@@ -259,6 +275,13 @@ export class WorkbenchApiClient {
       method: "PATCH",
       headers: this.headers(),
       body: JSON.stringify(payload),
+    });
+  }
+
+  async deleteCase(caseId: string) {
+    return this.request(`/cases/${caseId}`, {
+      method: "DELETE",
+      headers: this.headers(),
     });
   }
 
@@ -378,10 +401,13 @@ export class WorkbenchApiClient {
 
   async createCase(payload: Record<string, unknown>) {
     const resolved = await this.getResolvedConfig();
+    if (!resolved.assetId && !payload.asset_id) {
+      throw new Error("Select asset first");
+    }
     return this.request(`/assessments/${resolved.assessmentId}/cases`, {
       method: "POST",
       headers: this.headers(),
-      body: JSON.stringify(payload),
+      body: JSON.stringify({ asset_id: resolved.assetId, ...payload }),
     });
   }
 

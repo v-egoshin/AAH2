@@ -22,6 +22,7 @@ export type EmbedWorkbenchConfig = {
   caseScopedDecorations?: boolean;
   activeLocator?: { file: string; startLine: number; endLine: number } | null;
   projectBasePaths?: Record<string, string>;
+  workspaceRoot?: string;
   loadError?: string;
   graphData?: CaseGraphDataBundle;
   graphError?: string;
@@ -33,6 +34,7 @@ type EmbedWorkbenchContextValue = {
   selectedAssessmentId: string;
   selectedAssetId: string;
   getProjectBasePathForAsset: (assetId?: string | null) => string;
+  getWorkspaceRoot: () => string;
   setProjectBasePathForAsset: (assetId: string, value: string) => void;
 };
 
@@ -68,10 +70,11 @@ export function EmbedWorkbenchProvider({
       }
       return projectBasePathByAsset[assetId] ?? "";
     },
+    getWorkspaceRoot: () => config.workspaceRoot ?? "",
     setProjectBasePathForAsset: (assetId: string, path: string) => {
       setProjectBasePathByAsset((current) => ({ ...current, [assetId]: path }));
     },
-  }), [api, config.assessmentId, config.assetId, projectBasePathByAsset]);
+  }), [api, config.assessmentId, config.assetId, config.workspaceRoot, projectBasePathByAsset]);
 
   return (
     <EmbedWorkbenchContext.Provider value={value}>
@@ -93,6 +96,7 @@ export function useEmbedWorkbenchBridge() {
     assets: [] as Asset[],
     selectedAsset: null,
     projectBasePath: embed.getProjectBasePathForAsset(embed.selectedAssetId),
+    getWorkspaceRoot: embed.getWorkspaceRoot,
     setProjectBasePath: () => undefined,
     getProjectBasePathForAsset: embed.getProjectBasePathForAsset,
     setProjectBasePathForAsset: embed.setProjectBasePathForAsset,

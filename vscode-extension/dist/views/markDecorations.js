@@ -236,7 +236,9 @@ class MarkDecorations {
         const objectsById = collectObjectRanges(payload);
         const marksById = collectEntities([...(payload?.marks ?? []), ...(payload?.nearby_marks ?? [])]);
         const evidenceById = collectEntities(payload?.evidence ?? []);
-        const relevantMarks = payload?.nearby_marks ?? payload?.marks ?? [];
+        const relevantMarks = (payload?.nearby_marks?.length ? payload.nearby_marks : null)
+            ?? payload?.marks
+            ?? [];
         const relevantChecks = payload?.checks ?? [];
         const relations = payload?.relations ?? [];
         const cases = payload?.cases ?? [];
