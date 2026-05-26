@@ -1,4 +1,4 @@
-import { createBrowserRouter } from "react-router-dom";
+import { createBrowserRouter, Navigate } from "react-router-dom";
 import { Layout } from "./Layout";
 import { AssetsPage } from "../pages/AssetsPage";
 import { CandidateInboxPage } from "../pages/CandidateInboxPage";
@@ -12,6 +12,7 @@ import { MarksPage } from "../pages/MarksPage";
 import { ChecksPage } from "../pages/ChecksPage";
 import { RelationsPage } from "../pages/RelationsPage";
 import { ReviewContextPage } from "../pages/ReviewContextPage";
+import { MarkKindsSettingsTab, SettingsPage } from "../pages/SettingsPage";
 
 export const router = createBrowserRouter([
   {
@@ -30,6 +31,14 @@ export const router = createBrowserRouter([
       { path: "relations", element: <RelationsPage /> },
       { path: "coverage", element: <CoveragePage /> },
       { path: "review-context", element: <ReviewContextPage /> },
+      {
+        path: "settings",
+        element: <SettingsPage />,
+        children: [
+          { index: true, element: <Navigate to="mark-kinds" replace /> },
+          { path: "mark-kinds", element: <MarkKindsSettingsTab /> },
+        ],
+      },
     ],
   },
 ]);

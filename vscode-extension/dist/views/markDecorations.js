@@ -35,24 +35,29 @@ var __importStar = (this && this.__importStar) || (function () {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.MarkDecorations = void 0;
 const vscode = __importStar(require("vscode"));
+const markKindCatalog_1 = require("../state/markKindCatalog");
 function iconPath(context, name) {
     return vscode.Uri.joinPath(context.extensionUri, "media", name);
 }
-function makeDecoration(context, kind, iconName, color, overviewColor) {
+function makeDecoration(kind, gutterIconPath, overviewColor) {
+    const kindNormalized = kind.toUpperCase();
     return {
-        kind,
+        kind: kindNormalized,
         decoration: vscode.window.createTextEditorDecorationType({
-            isWholeLine: true,
-            gutterIconPath: iconPath(context, iconName),
+            isWholeLine: false,
+            gutterIconPath,
             gutterIconSize: "contain",
             overviewRulerColor: overviewColor,
             overviewRulerLane: vscode.OverviewRulerLane.Left,
-            backgroundColor: `${color}14`,
-            borderColor: `${color}55`,
-            borderWidth: "0 0 0 3px",
-            borderStyle: "solid",
         }),
     };
+}
+function makeDecorationDynamic(context, row) {
+    const structural = (0, markKindCatalog_1.gutterIconFileForStructuredKind)(row.kind_key);
+    const gutterIconPath = structural != null
+        ? iconPath(context, structural)
+        : vscode.Uri.parse((0, markKindCatalog_1.gutterColoredDotSvgDataUri)(row.color));
+    return makeDecoration(row.kind_key, gutterIconPath, (0, markKindCatalog_1.hexToRgbWithAlpha)(row.color, 0.82));
 }
 function collectObjectRanges(payload) {
     const byId = new Map();
@@ -215,19 +220,26 @@ function checkHover(check, relations, cases) {
 }
 class MarkDecorations {
     constructor(context) {
+        this.bundles = [];
+        this.extensionContext = context;
+        this.rebuildFromCatalog((0, markKindCatalog_1.getMarkKindCatalogSnapshot)());
+    }
+    rebuildFromCatalog(rows) {
+        this.disposeDecorationsOnly();
+        const ordered = [...rows].sort((a, b) => a.sort_order - b.sort_order || a.kind_key.localeCompare(b.kind_key));
         this.bundles = [
-            makeDecoration(context, "SOURCE", "source.svg", "#15803d", "rgba(21,128,61,0.8)"),
-            makeDecoration(context, "SINK", "sink.svg", "#b91c1c", "rgba(185,28,28,0.85)"),
-            makeDecoration(context, "GUARD", "guard.svg", "#1d4ed8", "rgba(29,78,216,0.8)"),
-            makeDecoration(context, "TRANSFORM", "transform.svg", "#a16207", "rgba(161,98,7,0.8)"),
-            makeDecoration(context, "NOTE", "mark.svg", "#475569", "rgba(71,85,105,0.8)"),
-            makeDecoration(context, "CHECK", "check.svg", "#2563eb", "rgba(37,99,235,0.82)"),
+            ...ordered.map((row) => makeDecorationDynamic(this.extensionContext, row)),
+            makeDecoration("CHECK", iconPath(this.extensionContext, "check.svg"), "rgba(37,99,235,0.82)"),
         ];
     }
-    dispose() {
+    disposeDecorationsOnly() {
         for (const bundle of this.bundles) {
             bundle.decoration.dispose();
         }
+        this.bundles = [];
+    }
+    dispose() {
+        this.disposeDecorationsOnly();
     }
     apply(editor, payload) {
         if (!editor) {
@@ -256,7 +268,7 @@ class MarkDecorations {
                     return acc;
                 }, [])
                 : relevantMarks
-                    .filter((mark) => mark.kind === bundle.kind)
+                    .filter((mark) => (mark.kind ?? "").toUpperCase() === bundle.kind.toUpperCase())
                     .reduce((acc, mark) => {
                     const range = rangeForMark(mark, objectsById);
                     if (!range) {

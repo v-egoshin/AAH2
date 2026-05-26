@@ -39,6 +39,7 @@ const vscode = __importStar(require("vscode"));
 const assessment_1 = require("./commands/assessment");
 const mark_1 = require("./commands/mark");
 const client_1 = require("./api/client");
+const markKindCatalog_1 = require("./state/markKindCatalog");
 const log_1 = require("./log");
 const assessmentState_1 = require("./state/assessmentState");
 const activeCase_1 = require("./state/activeCase");
@@ -75,6 +76,20 @@ function activate(context) {
     const markDecorations = new markDecorations_1.MarkDecorations(context);
     context.subscriptions.push({ dispose: () => markDecorations.dispose() });
     const codeLensProvider = new mark_1.SelectionActionCodeLensProvider();
+    const syncMarkKindCatalog = async () => {
+        try {
+            const api = new client_1.WorkbenchApiClient((0, assessmentState_1.readState)());
+            await (0, markKindCatalog_1.refreshMarkKindCatalogFromApi)(api);
+            markDecorations.rebuildFromCatalog((0, markKindCatalog_1.getMarkKindCatalogSnapshot)());
+            codeLensProvider.refresh();
+            linkedEntitiesPanel.refreshConfig();
+        }
+        catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            (0, log_1.log)(`Mark kind catalog sync skipped: ${message}`);
+        }
+    };
+    void syncMarkKindCatalog();
     (0, markDescriptionWidget_1.initializeMarkDescriptionController)(context);
     context.subscriptions.push({ dispose: () => (0, markDescriptionWidget_1.disposeMarkDescriptionEditor)() });
     (0, assessment_1.registerAssessmentCommands)(context);
@@ -141,6 +156,10 @@ function activate(context) {
         await runRefresh(true);
     };
     context.subscriptions.push(vscode.commands.registerCommand("appsecWorkbench.refreshContext", refresh));
+    context.subscriptions.push(vscode.commands.registerCommand("appsecWorkbench.refreshMarkKindCatalog", async () => {
+        await syncMarkKindCatalog();
+        await refresh();
+    }));
     context.subscriptions.push(vscode.commands.registerCommand("appsecWorkbench.refreshLinkedEntities", () => linkedEntitiesPanel.refreshConfig()));
     context.subscriptions.push(vscode.commands.registerCommand("appsecWorkbench.selectCheckInChecks", (checkId) => checksPanel.selectCheck(checkId)));
     context.subscriptions.push(vscode.commands.registerCommand("appsecWorkbench.showLogs", () => (0, log_1.showLogs)()));

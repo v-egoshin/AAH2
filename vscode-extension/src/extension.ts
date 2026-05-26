@@ -2,6 +2,7 @@ import * as vscode from "vscode";
 import { registerAssessmentCommands } from "./commands/assessment";
 import { getSelectionTarget, registerMarkCommands, SelectionActionCodeLensProvider } from "./commands/mark";
 import { ReviewEntity, WorkbenchApiClient } from "./api/client";
+import { getMarkKindCatalogSnapshot, refreshMarkKindCatalogFromApi } from "./state/markKindCatalog";
 import { log, showLogs } from "./log";
 import { configureAssessmentStateStorage, readState } from "./state/assessmentState";
 import { configureActiveCaseStorage } from "./state/activeCase";
@@ -41,6 +42,21 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push({ dispose: () => markDecorations.dispose() });
 
   const codeLensProvider = new SelectionActionCodeLensProvider();
+
+  const syncMarkKindCatalog = async () => {
+    try {
+      const api = new WorkbenchApiClient(readState());
+      await refreshMarkKindCatalogFromApi(api);
+      markDecorations.rebuildFromCatalog(getMarkKindCatalogSnapshot());
+      codeLensProvider.refresh();
+      linkedEntitiesPanel.refreshConfig();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      log(`Mark kind catalog sync skipped: ${message}`);
+    }
+  };
+
+  void syncMarkKindCatalog();
 
   initializeMarkDescriptionController(context);
   context.subscriptions.push({ dispose: () => disposeMarkDescriptionEditor() });
@@ -113,6 +129,12 @@ export function activate(context: vscode.ExtensionContext) {
   };
 
   context.subscriptions.push(vscode.commands.registerCommand("appsecWorkbench.refreshContext", refresh));
+  context.subscriptions.push(
+    vscode.commands.registerCommand("appsecWorkbench.refreshMarkKindCatalog", async () => {
+      await syncMarkKindCatalog();
+      await refresh();
+    }),
+  );
   context.subscriptions.push(vscode.commands.registerCommand("appsecWorkbench.refreshLinkedEntities", () => linkedEntitiesPanel.refreshConfig()));
   context.subscriptions.push(vscode.commands.registerCommand("appsecWorkbench.selectCheckInChecks", (checkId: string) => checksPanel.selectCheck(checkId)));
   context.subscriptions.push(vscode.commands.registerCommand("appsecWorkbench.showLogs", () => showLogs()));

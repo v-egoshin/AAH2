@@ -9,6 +9,7 @@ from app.api.routes.coverage import router as coverage_router
 from app.api.routes.cases import router as cases_router
 from app.api.routes.findings import router as findings_router
 from app.api.routes.relations import router as relations_router
+from app.api.routes.mark_kind_catalog import router as mark_kind_catalog_router
 from app.api.routes.imports import router as imports_router
 from app.api.routes.marks import router as marks_router
 from app.api.routes.objects import router as objects_router
@@ -38,4 +39,5 @@ app.include_router(cases_router)
 app.include_router(findings_router)
 app.include_router(relations_router)
 app.include_router(review_context_router)
+app.include_router(mark_kind_catalog_router)
 app.include_router(coverage_router)

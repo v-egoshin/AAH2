@@ -15,7 +15,10 @@ def create_mark(assessment_id: UUID, payload: MarkCreate):
         raise HTTPException(status_code=404, detail="Assessment not found")
     if payload.object_id and store.get_object(payload.object_id) is None:
         raise HTTPException(status_code=404, detail="Object not found")
-    return store.create_mark(assessment_id, payload)
+    try:
+        return store.create_mark(assessment_id, payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.get("/api/assessments/{assessment_id}/marks")

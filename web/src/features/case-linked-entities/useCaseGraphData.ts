@@ -421,6 +421,23 @@ export function useCaseGraphData(
         const objectKey = `${relation.object_type}:${relation.object_id}`;
         return subjectKey === key || objectKey === key;
       }).sort((left, right) => {
+        const leftProps = (left.properties ?? {}) as Record<string, unknown>;
+        const rightProps = (right.properties ?? {}) as Record<string, unknown>;
+        const leftOrder = typeof leftProps.linked_entities_order === "number" && Number.isFinite(leftProps.linked_entities_order)
+          ? (leftProps.linked_entities_order as number)
+          : null;
+        const rightOrder = typeof rightProps.linked_entities_order === "number" && Number.isFinite(rightProps.linked_entities_order)
+          ? (rightProps.linked_entities_order as number)
+          : null;
+        if (leftOrder !== null && rightOrder !== null && leftOrder !== rightOrder) {
+          return leftOrder - rightOrder;
+        }
+        if (leftOrder !== null && rightOrder === null) {
+          return -1;
+        }
+        if (leftOrder === null && rightOrder !== null) {
+          return 1;
+        }
         const leftTime = left.created_at ? Date.parse(left.created_at) : 0;
         const rightTime = right.created_at ? Date.parse(right.created_at) : 0;
         if (leftTime !== rightTime) {

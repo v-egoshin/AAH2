@@ -50,6 +50,9 @@ export type EmbedHostMutations = {
     markIds: string[];
     isDeadEnd: boolean;
   }) => Promise<void>;
+  patchRelationPropertiesBatch: (payload: {
+    patches: Array<{ relationId: string; properties: Record<string, unknown> }>;
+  }) => Promise<void>;
 };
 
 const ENTITY_DRAG_MIME = "application/x-aah2-entity";
@@ -88,7 +91,12 @@ function locatorMatchesRange(locator: string | null | undefined, file: string, s
   const locatorFile = match[1].replace(/^\//, "");
   const activeFile = file.replace(/^\//, "");
   const locatorLine = match[2] ? Number(match[2]) : null;
-  return (activeFile.endsWith(locatorFile) || locatorFile.endsWith(activeFile)) && (!locatorLine || rangesOverlap(locatorLine, locatorLine, startLine, endLine));
+  // Locators without a line must not track the editor caret (would highlight every entity in that file).
+  if (locatorLine === null) {
+    return false;
+  }
+  return (activeFile.endsWith(locatorFile) || locatorFile.endsWith(activeFile))
+    && rangesOverlap(locatorLine, locatorLine, startLine, endLine);
 }
 
 function rangeMatchesActive(
@@ -126,6 +134,19 @@ type FlatTreeNode = {
 
 function graphNodeKey(node: GraphNode) {
   return `${node.entityType}:${node.entityId}`;
+}
+
+function findGraphParent(root: GraphNode, targetKey: string): GraphNode | null {
+  for (const child of root.children) {
+    if (graphNodeKey(child) === targetKey) {
+      return root;
+    }
+    const inner = findGraphParent(child, targetKey);
+    if (inner !== null) {
+      return inner;
+    }
+  }
+  return null;
 }
 
 function flattenVisibleNodes(roots: GraphNode[], collapsedIds: Set<string>): FlatTreeNode[] {
@@ -221,6 +242,7 @@ export function CaseLinkedEntitiesPanel({
   const {
     selected,
     relations,
+    relationTree,
     relationTreeRoots,
     reload,
     error,
@@ -237,10 +259,15 @@ export function CaseLinkedEntitiesPanel({
   const [expandedSnippetIds, setExpandedSnippetIds] = useState<Set<string>>(new Set());
   const [focusedNodeKey, setFocusedNodeKey] = useState<string | null>(null);
   const [dropState, setDropState] = useState<RelationDropState | null>(null);
+  const dropStateRef = useRef<RelationDropState | null>(null);
   const [relationDescriptionModal, setRelationDescriptionModal] = useState<RelationDescriptionModalState | null>(null);
   const [relationDisplayModal, setRelationDisplayModal] = useState<RelationDisplayModalState | null>(null);
   const treeRef = useRef<HTMLDivElement>(null);
   const panelKeyboardActiveRef = useRef(false);
+
+  useEffect(() => {
+    dropStateRef.current = dropState;
+  }, [dropState]);
 
   const reportError = (message: string) => {
     setError(message);
@@ -256,6 +283,57 @@ export function CaseLinkedEntitiesPanel({
     await reload();
     onGraphMutated?.();
   };
+
+  const applySiblingReorder = useCallback(
+    async (parent: GraphNode, draggedKey: string, targetKey: string, position: "before" | "after") => {
+      if (draggedKey === targetKey) {
+        return;
+      }
+      const siblings = [...parent.children];
+      const keys = siblings.map((s) => graphNodeKey(s));
+      const from = keys.indexOf(draggedKey);
+      const toRef = keys.indexOf(targetKey);
+      if (from < 0 || toRef < 0) {
+        return;
+      }
+      keys.splice(from, 1);
+      let insertAt = toRef;
+      if (from < toRef) {
+        insertAt--;
+      }
+      if (position === "after") {
+        insertAt++;
+      }
+      keys.splice(insertAt, 0, draggedKey);
+      const byKey = new Map(siblings.map((s) => [graphNodeKey(s), s]));
+      const patches: Array<{ relationId: string; properties: Record<string, unknown> }> = [];
+      for (let i = 0; i < keys.length; i++) {
+        const node = byKey.get(keys[i]!);
+        if (!node?.relationId) {
+          continue;
+        }
+        const rel = relations.find((r) => r.id === node.relationId);
+        const merged = { ...((rel?.properties ?? {}) as Record<string, unknown>), linked_entities_order: i };
+        patches.push({ relationId: node.relationId, properties: merged });
+      }
+      if (!patches.length) {
+        return;
+      }
+      try {
+        if (hostMutations) {
+          await hostMutations.patchRelationPropertiesBatch({ patches });
+        } else {
+          for (const p of patches) {
+            await api.updateRelation(p.relationId, { properties: p.properties });
+          }
+        }
+        await notifyMutated();
+      } catch (error) {
+        reportError(mutationErrorMessage(error));
+      }
+    },
+    [relations, api, hostMutations, notifyMutated, reportError],
+  );
 
   const toggleCollapsed = (nodeKey: string) => {
     setCollapsedIds((current) => {
@@ -385,11 +463,31 @@ export function CaseLinkedEntitiesPanel({
   }, [focusedNodeKey]);
 
   useEffect(() => {
-    if (focusedNodeKey && visibleNodes.some((item) => item.nodeKey === focusedNodeKey)) {
+    setCollapsedIds(new Set());
+    setExpandedSnippetIds(new Set());
+    setFocusedNodeKey(null);
+    setDropState(null);
+    setRelationDescriptionModal(null);
+    setRelationDisplayModal(null);
+    panelKeyboardActiveRef.current = false;
+  }, [caseId]);
+
+  /** Drop stale keyboard focus after graph updates; never auto-highlight a row without explicit user navigation */
+  useEffect(() => {
+    if (!focusedNodeKey) {
       return;
     }
-    setFocusedNodeKey(visibleNodes[0]?.nodeKey ?? null);
+    if (!visibleNodes.some((item) => item.nodeKey === focusedNodeKey)) {
+      setFocusedNodeKey(null);
+    }
   }, [focusedNodeKey, visibleNodes]);
+
+  /** Clear drop highlight when native drag ends (cancelled drops, etc.). */
+  useEffect(() => {
+    const clear = () => setDropState(null);
+    window.addEventListener("dragend", clear, true);
+    return () => window.removeEventListener("dragend", clear, true);
+  }, []);
 
   const createPartOfRelation = async (subjectType: string, subjectId: string, objectType: string, objectId: string) => {
     try {
@@ -712,15 +810,60 @@ export function CaseLinkedEntitiesPanel({
           event.preventDefault();
           event.stopPropagation();
           event.dataTransfer.dropEffect = "move";
-          setDropState({ targetKey: nodeKey, position: "inside" });
+          const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+          const y = event.clientY - rect.top;
+          const h = rect.height || 1;
+          let position: RelationDropState["position"] = "inside";
+          if (node.entityType.toUpperCase() !== "CASE") {
+            if (y < h / 3) {
+              position = "before";
+            } else if (y > (2 * h) / 3) {
+              position = "after";
+            } else {
+              position = "inside";
+            }
+          }
+          setDropState({ targetKey: nodeKey, position });
         }}
         onDragLeave={(event) => {
           event.stopPropagation();
+          const related = event.relatedTarget as Node | null;
+          if (related && event.currentTarget.contains(related)) {
+            return;
+          }
           setDropState((current) => (current?.targetKey === nodeKey ? null : current));
         }}
         onDrop={(event) => {
           event.preventDefault();
           event.stopPropagation();
+          const ds = dropStateRef.current;
+          setDropState(null);
+          const raw = readEntityDragData(event.dataTransfer);
+          if (!raw) {
+            return;
+          }
+          let parsed: { entityType?: string; entityId?: string };
+          try {
+            parsed = JSON.parse(raw) as { entityType?: string; entityId?: string };
+          } catch {
+            return;
+          }
+          if (!parsed.entityType || !parsed.entityId) {
+            return;
+          }
+          const draggedKey = `${parsed.entityType}:${parsed.entityId}`;
+          if (
+            relationTree
+            && ds?.targetKey === nodeKey
+            && (ds.position === "before" || ds.position === "after")
+          ) {
+            const parentDrag = findGraphParent(relationTree, draggedKey);
+            const parentDrop = findGraphParent(relationTree, nodeKey);
+            if (parentDrag && parentDrag === parentDrop) {
+              void applySiblingReorder(parentDrag, draggedKey, nodeKey, ds.position);
+              return;
+            }
+          }
           void handleEntityDrop(event, node.entityType, node.entityId);
         }}
       >
@@ -730,14 +873,13 @@ export function CaseLinkedEntitiesPanel({
             <div
               className={`relation-tree-hit ${dropState?.targetKey === nodeKey ? "is-drop-target" : ""} ${isCurrentEditorEntity ? "is-current-editor-entity" : ""} ${isKeyboardFocused ? "is-keyboard-focused" : ""}`}
               data-node-key={nodeKey}
-              onClick={() => setFocusedNodeKey(nodeKey)}
             >
               {node.entityType !== "CASE" ? (
                 <span
                   className="relation-drag-handle"
                   draggable
-                  title="Drag to reparent"
-                  aria-label="Drag to reparent"
+                  title="Drag to reorder or reparent"
+                  aria-label="Drag to reorder or reparent"
                   onDragStart={(event) => {
                     setEntityDragData(event.dataTransfer, node.entityType, node.entityId);
                   }}

@@ -1,5 +1,7 @@
-from uuid import UUID
+import re
+from uuid import UUID, uuid4
 
+from app.db.mark_kind_catalog_model import MarkKindCatalogORM
 from app.db.models import (
     AssessmentORM,
     AssetORM,
@@ -14,11 +16,17 @@ from app.db.models import (
     RelationORM,
 )
 from app.db.session import get_session
-from app.models.enums import CandidateStatus, CandidateType, CheckStatus, MarkKind
+from app.models.enums import CandidateStatus, CandidateType, CheckStatus
 from app.schemas.asset import AssetCreate, AssetRead, AssetUpdate
 from app.schemas.assessment import AssessmentCreate, AssessmentRead, AssessmentUpdate
 from app.schemas.case_finding import CaseCreate, CaseRead, CaseUpdate, FindingCreate, FindingRead, FindingUpdate
 from app.schemas.domain import CandidateAcceptRequest, CandidateRead, CandidateUpdate, ImportBatchRead, ImportBatchUpdate, ImportCreate
+from app.schemas.mark_kind_catalog import (
+    MarkKindCatalogEntryRead,
+    MarkKindCatalogRead,
+    MarkKindCatalogReplace,
+    default_builtin_entries,
+)
 from app.schemas.relation_evidence import EvidenceCreate, EvidenceRead, EvidenceUpdate, RelationCreate, RelationRead, RelationUpdate
 from app.schemas.workflow import CheckCreate, CheckRecord, CheckStatusUpdate, CheckUpdate, MarkCreate, MarkUpdate, ObjectCreate, ObjectUpdate
 
@@ -127,6 +135,106 @@ class SqlStore:
                 "created_at": record.created_at,
             }
         )
+
+    _MARK_KIND_KEY_RE = re.compile(r"^[A-Z][A-Z0-9_]*$")
+
+    @staticmethod
+    def _normalize_import_mark_kind(raw: object) -> str:
+        base = raw if isinstance(raw, str) else str(raw or "NOTE")
+        key = base.strip().upper()[:64]
+        if not key or not SqlStore._MARK_KIND_KEY_RE.match(key):
+            return "NOTE"
+        return key
+
+    def _seed_mark_kind_catalog_if_empty(self, db, assessment_id_str: str) -> None:
+        count = (
+            db.query(MarkKindCatalogORM)
+            .filter(MarkKindCatalogORM.assessment_id == assessment_id_str)
+            .count()
+        )
+        if count > 0:
+            return
+        for row in default_builtin_entries():
+            db.add(
+                MarkKindCatalogORM(
+                    id=str(uuid4()),
+                    assessment_id=assessment_id_str,
+                    kind_key=row["kind_key"],
+                    display_label=row["display_label"],
+                    enabled=row["enabled"],
+                    sort_order=row["sort_order"],
+                    color=row["color"],
+                    is_builtin=row["is_builtin"],
+                ),
+            )
+
+    def _assert_mark_kind_enabled(self, db, assessment_id_str: str, kind: str) -> None:
+        row = (
+            db.query(MarkKindCatalogORM)
+            .filter(
+                MarkKindCatalogORM.assessment_id == assessment_id_str,
+                MarkKindCatalogORM.kind_key == kind,
+            )
+            .first()
+        )
+        if row is None:
+            msg = f"Unknown mark kind: {kind}"
+            raise ValueError(msg)
+        if not row.enabled:
+            msg = f"Mark kind is disabled: {kind}"
+            raise ValueError(msg)
+
+    def _catalog_row_to_read(self, record: MarkKindCatalogORM) -> MarkKindCatalogEntryRead:
+        return MarkKindCatalogEntryRead(
+            id=UUID(record.id),
+            kind_key=record.kind_key,
+            display_label=record.display_label,
+            enabled=bool(record.enabled),
+            sort_order=record.sort_order,
+            color=record.color,
+            is_builtin=bool(record.is_builtin),
+        )
+
+    def get_mark_kind_catalog(self, assessment_id: UUID) -> MarkKindCatalogRead | None:
+        with get_session() as db:
+            aid = str(assessment_id)
+            if db.get(AssessmentORM, aid) is None:
+                return None
+            self._seed_mark_kind_catalog_if_empty(db, aid)
+            db.commit()
+            rows = (
+                db.query(MarkKindCatalogORM)
+                .filter(MarkKindCatalogORM.assessment_id == aid)
+                .order_by(MarkKindCatalogORM.sort_order.asc(), MarkKindCatalogORM.kind_key.asc())
+                .all()
+            )
+            return MarkKindCatalogRead(entries=[self._catalog_row_to_read(row) for row in rows])
+
+    def replace_mark_kind_catalog(self, assessment_id: UUID, payload: MarkKindCatalogReplace) -> MarkKindCatalogRead | None:
+        with get_session() as db:
+            aid = str(assessment_id)
+            if db.get(AssessmentORM, aid) is None:
+                return None
+            db.query(MarkKindCatalogORM).filter(MarkKindCatalogORM.assessment_id == aid).delete(synchronize_session=False)
+            for entry in payload.entries:
+                db.add(
+                    MarkKindCatalogORM(
+                        id=str(uuid4()),
+                        assessment_id=aid,
+                        kind_key=entry.kind_key,
+                        display_label=entry.display_label,
+                        enabled=entry.enabled,
+                        sort_order=entry.sort_order,
+                        color=entry.color,
+                        is_builtin=entry.is_builtin,
+                    ),
+                )
+            db.commit()
+        result = self.get_mark_kind_catalog(assessment_id)
+        if result is None:
+            msg = "Failed to load catalog after replace"
+            raise RuntimeError(msg)
+        return result
 
     def _check_to_schema(self, record: CheckORM) -> CheckRecord:
         return CheckRecord.model_validate(
@@ -458,6 +566,8 @@ class SqlStore:
 
     def create_mark(self, assessment_id: UUID, payload: MarkCreate):
         with get_session() as db:
+            self._seed_mark_kind_catalog_if_empty(db, str(assessment_id))
+            self._assert_mark_kind_enabled(db, str(assessment_id), payload.kind)
             object_id = str(payload.object_id) if payload.object_id else None
             if object_id is not None and payload.object_payload is not None:
                 existing_object = db.get(ObjectORM, object_id)
@@ -845,7 +955,7 @@ class SqlStore:
                 mark = MarkORM(
                     assessment_id=candidate.assessment_id,
                     object_id=obj.id,
-                    kind=MarkKind(proposed.get("kind", "NOTE")),
+                    kind=self._normalize_import_mark_kind(proposed.get("kind", "NOTE")),
                     title=proposed.get("title", "Imported mark"),
                     note=proposed.get("note"),
                     confidence=candidate.confidence,

@@ -7,7 +7,8 @@ export type HostMutationAction =
   | "deleteRelation"
   | "createCheckFromNode"
   | "toggleDeadEnd"
-  | "deleteCase";
+  | "deleteCase"
+  | "patchRelationPropertiesBatch";
 
 type PendingMutation = {
   resolve: () => void;

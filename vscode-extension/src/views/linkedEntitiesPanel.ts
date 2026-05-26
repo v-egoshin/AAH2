@@ -3,6 +3,7 @@ import * as vscode from "vscode";
 import { AssetRecord, WorkbenchApiClient } from "../api/client";
 import { getActiveCase, setActiveCase } from "../state/activeCase";
 import { readState } from "../state/assessmentState";
+import { getMarkKindAccentByKindMap } from "../state/markKindCatalog";
 import { loadCaseGraphData, type CaseGraphDataBundle } from "./linkedEntitiesGraphData";
 import {
   getRepositoryRoot,
@@ -158,6 +159,8 @@ function assetLocatorBasePaths(assets: AssetRecord[], legacyPaths: Record<string
 export class LinkedEntitiesPanel implements vscode.WebviewViewProvider {
   private view: vscode.WebviewView | null = null;
   private configVersion = 0;
+  /** After first config push: used to drop editor-sync highlight once when Active Case changes */
+  private linkedEntitiesPreviousCaseId: string | null | undefined = undefined;
   private onSidebarFocusChange: ((focused: boolean) => void) | undefined;
   private onCaseScopedDecorationsChange: ((enabled: boolean) => void) | undefined;
   private caseScopedDecorations = false;
@@ -377,6 +380,22 @@ export class LinkedEntitiesPanel implements vscode.WebviewViewProvider {
           await toggleMarksDeadEnd(client, markIds, isDeadEnd);
           break;
         }
+        case "patchRelationPropertiesBatch": {
+          const patches = Array.isArray(payload.patches)
+            ? payload.patches as Array<{ relationId?: string; properties?: Record<string, unknown> }>
+            : [];
+          for (const patch of patches) {
+            const relationId = String(patch.relationId ?? "");
+            const properties = patch.properties && typeof patch.properties === "object"
+              ? patch.properties
+              : {};
+            if (!relationId) {
+              throw new Error("Invalid patchRelationPropertiesBatch: missing relationId");
+            }
+            await client.updateRelation(relationId, { properties });
+          }
+          break;
+        }
         case "deleteCase": {
           const caseId = String(payload.caseId ?? activeCase?.id ?? "");
           if (!caseId) {
@@ -441,12 +460,13 @@ export class LinkedEntitiesPanel implements vscode.WebviewViewProvider {
       caseId: null as string | null,
       caseTitle: null as string | null,
       caseScopedDecorations: this.caseScopedDecorations,
-      activeLocator: activeEditorLocator(),
+      activeLocator: null as ReturnType<typeof activeEditorLocator>,
       projectBasePaths: legacyProjectBasePaths,
       workspaceRoot: vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? "",
       loadError: undefined as string | undefined,
       graphData: undefined as CaseGraphDataBundle | undefined,
       graphError: undefined as string | undefined,
+      markKindAccentByKind: undefined as Record<string, string> | undefined,
     };
     const client = this.createApiClient(state);
     try {
@@ -472,17 +492,25 @@ export class LinkedEntitiesPanel implements vscode.WebviewViewProvider {
       if (activeCase?.id && !scopedActiveCase) {
         setActiveCase(null);
       }
+      const nextCaseId = scopedActiveCase?.id ?? null;
+      let locatorForEmbed = activeEditorLocator();
+      if (this.linkedEntitiesPreviousCaseId !== undefined && this.linkedEntitiesPreviousCaseId !== nextCaseId) {
+        locatorForEmbed = null;
+      }
+      this.linkedEntitiesPreviousCaseId = nextCaseId;
       return {
         ...base,
         assessmentId: resolved.assessmentId,
         assetId: resolved.assetId,
-        caseId: scopedActiveCase?.id ?? null,
+        caseId: nextCaseId,
         caseTitle: scopedActiveCase?.title ?? null,
         caseStatus: cases.find((row) => row.id === scopedActiveCase?.id)?.status ?? null,
         cases,
         graphData: graph.graphData,
         projectBasePaths,
         graphError: graph.graphError,
+        markKindAccentByKind: getMarkKindAccentByKindMap(),
+        activeLocator: locatorForEmbed,
         configVersion: ++this.configVersion,
       };
     } catch (error) {

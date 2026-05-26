@@ -15,6 +15,7 @@ const NAV_ITEMS = [
   ["/relations", "Relations"],
   ["/coverage", "Coverage"],
   ["/review-context", "Review Context"],
+  ["/settings", "Settings"],
 ] as const;
 
 export function Layout() {

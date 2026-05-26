@@ -38,6 +38,7 @@ const vscode = __importStar(require("vscode"));
 const client_1 = require("../api/client");
 const activeCase_1 = require("../state/activeCase");
 const assessmentState_1 = require("../state/assessmentState");
+const markKindCatalog_1 = require("../state/markKindCatalog");
 const linkedEntitiesGraphData_1 = require("./linkedEntitiesGraphData");
 const assetPath_1 = require("../lib/assetPath");
 const linkedEntitiesMutations_1 = require("./linkedEntitiesMutations");
@@ -145,6 +146,8 @@ class LinkedEntitiesPanel {
         this.extensionUri = extensionUri;
         this.view = null;
         this.configVersion = 0;
+        /** After first config push: used to drop editor-sync highlight once when Active Case changes */
+        this.linkedEntitiesPreviousCaseId = undefined;
         this.caseScopedDecorations = false;
     }
     setSidebarFocusHandler(handler) {
@@ -326,6 +329,22 @@ class LinkedEntitiesPanel {
                     await (0, linkedEntitiesMutations_1.toggleMarksDeadEnd)(client, markIds, isDeadEnd);
                     break;
                 }
+                case "patchRelationPropertiesBatch": {
+                    const patches = Array.isArray(payload.patches)
+                        ? payload.patches
+                        : [];
+                    for (const patch of patches) {
+                        const relationId = String(patch.relationId ?? "");
+                        const properties = patch.properties && typeof patch.properties === "object"
+                            ? patch.properties
+                            : {};
+                        if (!relationId) {
+                            throw new Error("Invalid patchRelationPropertiesBatch: missing relationId");
+                        }
+                        await client.updateRelation(relationId, { properties });
+                    }
+                    break;
+                }
                 case "deleteCase": {
                     const caseId = String(payload.caseId ?? activeCase?.id ?? "");
                     if (!caseId) {
@@ -388,12 +407,13 @@ class LinkedEntitiesPanel {
             caseId: null,
             caseTitle: null,
             caseScopedDecorations: this.caseScopedDecorations,
-            activeLocator: activeEditorLocator(),
+            activeLocator: null,
             projectBasePaths: legacyProjectBasePaths,
             workspaceRoot: vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? "",
             loadError: undefined,
             graphData: undefined,
             graphError: undefined,
+            markKindAccentByKind: undefined,
         };
         const client = this.createApiClient(state);
         try {
@@ -419,17 +439,25 @@ class LinkedEntitiesPanel {
             if (activeCase?.id && !scopedActiveCase) {
                 (0, activeCase_1.setActiveCase)(null);
             }
+            const nextCaseId = scopedActiveCase?.id ?? null;
+            let locatorForEmbed = activeEditorLocator();
+            if (this.linkedEntitiesPreviousCaseId !== undefined && this.linkedEntitiesPreviousCaseId !== nextCaseId) {
+                locatorForEmbed = null;
+            }
+            this.linkedEntitiesPreviousCaseId = nextCaseId;
             return {
                 ...base,
                 assessmentId: resolved.assessmentId,
                 assetId: resolved.assetId,
-                caseId: scopedActiveCase?.id ?? null,
+                caseId: nextCaseId,
                 caseTitle: scopedActiveCase?.title ?? null,
                 caseStatus: cases.find((row) => row.id === scopedActiveCase?.id)?.status ?? null,
                 cases,
                 graphData: graph.graphData,
                 projectBasePaths,
                 graphError: graph.graphError,
+                markKindAccentByKind: (0, markKindCatalog_1.getMarkKindAccentByKindMap)(),
+                activeLocator: locatorForEmbed,
                 configVersion: ++this.configVersion,
             };
         }

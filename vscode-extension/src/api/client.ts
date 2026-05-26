@@ -294,7 +294,24 @@ export class WorkbenchApiClient {
     });
   }
 
-  async createMark(kind: "SOURCE" | "SINK" | "GUARD" | "TRANSFORM" | "NOTE", payload: Record<string, unknown>) {
+  async getMarkKindCatalog(assessmentId: string) {
+    return this.request(`/assessments/${assessmentId}/mark-kind-catalog`, {
+      method: "GET",
+      headers: this.headers(),
+    }) as Promise<{
+      entries: Array<{
+        id: string;
+        kind_key: string;
+        display_label: string;
+        enabled: boolean;
+        sort_order: number;
+        color: string;
+        is_builtin: boolean;
+      }>;
+    }>;
+  }
+
+  async createMark(kind: string, payload: Record<string, unknown>) {
     const resolved = await this.getResolvedConfig();
     return this.request(`/assessments/${resolved.assessmentId}/marks`, {
       method: "POST",
@@ -473,5 +490,33 @@ export class WorkbenchApiClient {
       headers: this.headers(),
       body: JSON.stringify(payload),
     });
+  }
+
+  async patchMarkKindCatalog(
+    assessmentId: string,
+    entries: Array<{
+      kind_key: string;
+      display_label: string;
+      enabled: boolean;
+      sort_order: number;
+      color: string;
+      is_builtin: boolean;
+    }>,
+  ) {
+    return this.request(`/assessments/${assessmentId}/mark-kind-catalog`, {
+      method: "PATCH",
+      headers: this.headers(),
+      body: JSON.stringify({ entries }),
+    }) as Promise<{
+      entries: Array<{
+        id: string;
+        kind_key: string;
+        display_label: string;
+        enabled: boolean;
+        sort_order: number;
+        color: string;
+        is_builtin: boolean;
+      }>;
+    }>;
   }
 }

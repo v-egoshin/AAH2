@@ -189,6 +189,12 @@ class WorkbenchApiClient {
             body: JSON.stringify({ asset_id: resolved.assetId || undefined, file, start_line: line, end_line: line, include_nearby: true }),
         });
     }
+    async getMarkKindCatalog(assessmentId) {
+        return this.request(`/assessments/${assessmentId}/mark-kind-catalog`, {
+            method: "GET",
+            headers: this.headers(),
+        });
+    }
     async createMark(kind, payload) {
         const resolved = await this.getResolvedConfig();
         return this.request(`/assessments/${resolved.assessmentId}/marks`, {
@@ -346,6 +352,13 @@ class WorkbenchApiClient {
             method: "PATCH",
             headers: this.headers(),
             body: JSON.stringify(payload),
+        });
+    }
+    async patchMarkKindCatalog(assessmentId, entries) {
+        return this.request(`/assessments/${assessmentId}/mark-kind-catalog`, {
+            method: "PATCH",
+            headers: this.headers(),
+            body: JSON.stringify({ entries }),
         });
     }
 }

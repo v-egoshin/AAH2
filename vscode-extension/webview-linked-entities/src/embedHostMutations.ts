@@ -15,4 +15,6 @@ export const embedHostMutations: EmbedHostMutations = {
   deleteRelation: (relationId) => requestHostMutation("deleteRelation", { relationId }),
   createCheckFromNode: (payload) => requestHostMutation("createCheckFromNode", payload),
   toggleDeadEnd: (payload) => requestHostMutation("toggleDeadEnd", payload),
+  patchRelationPropertiesBatch: (payload) =>
+    requestHostMutation("patchRelationPropertiesBatch", { patches: payload.patches } as Record<string, unknown>),
 };

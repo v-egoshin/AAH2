@@ -22,5 +22,10 @@
 
 ## NOT DONE
 - Full SQL migration across entire domain model.
-- Alembic and schema versioning.
+- Alembic and schema versioning (in progress: `alembic/` used in Docker; follow with new revisions for schema changes).
 - Full tests/e2e.
+
+## TESTING / REGRESSION
+- Новый функционал сопровождается автотестами на адекватном уровне (API, web unit/component; для extension — модульные там, где возможно).
+- Изменение или удаление существующего поведения выполняется вместе с обновлением или добавлением тестов на прежние контракты, чтобы не ломать сценарии без сигнала в CI.
+- Ручные чеклисты допустимы там, где автоматизация дорога (полный UI extension), но не заменяют тестируемые слои полностью.

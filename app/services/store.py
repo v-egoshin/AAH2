@@ -1,7 +1,8 @@
 from collections.abc import Iterable
+import re
 from uuid import UUID
 
-from app.models.enums import CandidateStatus, CandidateType, CheckStatus, MarkKind, SourceType
+from app.models.enums import CandidateStatus, CandidateType, CheckStatus, SourceType
 from app.schemas.asset import AssetCreate, AssetRead, AssetUpdate
 from app.schemas.assessment import AssessmentCreate, AssessmentRead, AssessmentUpdate
 from app.schemas.case_finding import CaseCreate, CaseRead, CaseUpdate, FindingCreate, FindingRead, FindingUpdate
@@ -19,6 +20,13 @@ from app.schemas.domain import (
 )
 from app.schemas.relation_evidence import EvidenceCreate, EvidenceRead, EvidenceUpdate, RelationCreate, RelationRead, RelationUpdate
 from app.schemas.workflow import CheckCreate, CheckRecord, CheckStatusUpdate, CheckUpdate, MarkCreate, MarkUpdate, ObjectCreate, ObjectUpdate
+
+_COERCE_MARK_KIND = re.compile(r"^[A-Z][A-Z0-9_]*$")
+
+
+def _coerce_mark_kind_value(raw: object) -> str:
+    s = (raw if isinstance(raw, str) else str(raw or "NOTE")).strip().upper()[:64]
+    return s if s and _COERCE_MARK_KIND.match(s) else "NOTE"
 
 
 def _apply_patch(record: object, changes: dict) -> object:
@@ -453,7 +461,7 @@ class InMemoryStore:
                 candidate.assessment_id,
                 MarkCreate(
                     object_id=obj.id,
-                    kind=MarkKind(candidate_payload.get("kind", "NOTE")),
+                    kind=_coerce_mark_kind_value(candidate_payload.get("kind", "NOTE")),
                     title=candidate_payload.get("title", "Imported mark"),
                     note=candidate_payload.get("note"),
                     confidence=candidate.confidence,

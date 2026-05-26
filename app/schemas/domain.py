@@ -3,7 +3,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
-from app.models.enums import CandidateStatus, CandidateType, CheckStatus, Confidence, ImportStatus, MarkKind, MarkStatus, SourceType
+from app.models.enums import CandidateStatus, CandidateType, CheckStatus, Confidence, ImportStatus, MarkStatus, SourceType
 from app.schemas.common import new_uuid, utcnow
 
 
@@ -76,7 +76,7 @@ class MarkRead(BaseModel):
     id: UUID = Field(default_factory=new_uuid)
     assessment_id: UUID
     object_id: UUID
-    kind: MarkKind
+    kind: str
     title: str
     note: str | None = None
     confidence: Confidence = Confidence.UNKNOWN

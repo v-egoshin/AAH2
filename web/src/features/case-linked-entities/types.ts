@@ -50,7 +50,7 @@ export type GraphNode = {
 
 export type RelationDropState = {
   targetKey: string;
-  position: "inside";
+  position: "inside" | "before" | "after";
 };
 
 export type RelationDescriptionModalState = {

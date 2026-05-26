@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
 
-import { ApiClient, Asset } from "@web/api/client";
+import { ApiClient, Asset, MarkKindCatalogEntry } from "@web/api/client";
+import { MarkKindAccentContext } from "@web/context/MarkKindAccentContext";
 import type { CaseGraphDataBundle } from "@web/features/case-linked-entities/types";
 
 export type EmbedCaseOption = {
@@ -26,6 +27,8 @@ export type EmbedWorkbenchConfig = {
   loadError?: string;
   graphData?: CaseGraphDataBundle;
   graphError?: string;
+  /** From extension host (same snapshot as editor decorations); avoids failed fetches in webview */
+  markKindAccentByKind?: Record<string, string>;
   configVersion?: number;
 };
 
@@ -50,6 +53,7 @@ export function EmbedWorkbenchProvider({
   const [projectBasePathByAsset, setProjectBasePathByAsset] = useState<Record<string, string>>(
     () => config.projectBasePaths ?? {},
   );
+  const [markKindCatalog, setMarkKindCatalog] = useState<MarkKindCatalogEntry[]>([]);
 
   useEffect(() => {
     setProjectBasePathByAsset(config.projectBasePaths ?? {});
@@ -59,6 +63,45 @@ export function EmbedWorkbenchProvider({
     () => new ApiClient(config.apiBaseUrl, { authToken: config.authToken }),
     [config.apiBaseUrl, config.authToken],
   );
+
+  useEffect(() => {
+    if (!config.assessmentId) {
+      setMarkKindCatalog([]);
+      return;
+    }
+    if (config.markKindAccentByKind && Object.keys(config.markKindAccentByKind).length > 0) {
+      setMarkKindCatalog([]);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const data = await api.getMarkKindCatalog(config.assessmentId);
+        if (!cancelled) {
+          setMarkKindCatalog(Array.isArray(data.entries) ? data.entries : []);
+        }
+      } catch {
+        if (!cancelled) {
+          setMarkKindCatalog([]);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [api, config.assessmentId, config.configVersion, config.markKindAccentByKind]);
+
+  const markKindAccentByKind = useMemo(() => {
+    const fromHost = config.markKindAccentByKind;
+    if (fromHost && Object.keys(fromHost).length > 0) {
+      return fromHost;
+    }
+    const acc: Record<string, string> = {};
+    for (const entry of markKindCatalog) {
+      acc[entry.kind_key.toUpperCase()] = entry.color;
+    }
+    return acc;
+  }, [config.markKindAccentByKind, markKindCatalog]);
 
   const value = useMemo<EmbedWorkbenchContextValue>(() => ({
     api,
@@ -77,9 +120,9 @@ export function EmbedWorkbenchProvider({
   }), [api, config.assessmentId, config.assetId, config.workspaceRoot, projectBasePathByAsset]);
 
   return (
-    <EmbedWorkbenchContext.Provider value={value}>
-      {children}
-    </EmbedWorkbenchContext.Provider>
+    <MarkKindAccentContext.Provider value={markKindAccentByKind}>
+      <EmbedWorkbenchContext.Provider value={value}>{children}</EmbedWorkbenchContext.Provider>
+    </MarkKindAccentContext.Provider>
   );
 }
 

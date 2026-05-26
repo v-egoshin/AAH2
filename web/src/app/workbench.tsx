@@ -1,5 +1,6 @@
-import { createContext, useContext, useEffect, useMemo, useState } from "react";
-import { ApiClient, Assessment, Asset } from "../api/client";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { ApiClient, Assessment, Asset, MarkKindCatalogEntry } from "../api/client";
+import { MarkKindAccentContext } from "../context/MarkKindAccentContext";
 import { expandHomePath } from "../lib/assetPath";
 
 const DEFAULT_BASE_URL = "http://localhost:8000/api";
@@ -61,9 +62,11 @@ type WorkbenchContextValue = {
   setSelectedAssessmentId: (value: string) => void;
   selectedAssessment: Assessment | null;
   refreshAssessments: () => Promise<void>;
+  markKindCatalog: MarkKindCatalogEntry[];
+  refreshMarkKindCatalog: () => Promise<void>;
 };
 
-const WorkbenchContext = createContext<WorkbenchContextValue | null>(null);
+export const WorkbenchContext = createContext<WorkbenchContextValue | null>(null);
 
 export function WorkbenchProvider({ children }: { children: React.ReactNode }) {
   const [baseUrl, setBaseUrlState] = useState(() => localStorage.getItem("appsec.baseUrl") || DEFAULT_BASE_URL);
@@ -72,6 +75,7 @@ export function WorkbenchProvider({ children }: { children: React.ReactNode }) {
   const [selectedAssessmentId, setSelectedAssessmentIdState] = useState(() => localStorage.getItem("appsec.assessmentId") || "");
   const [selectedAssetId, setSelectedAssetIdState] = useState(() => localStorage.getItem("appsec.assetId") || "");
   const [projectBasePathByAsset, setProjectBasePathByAssetState] = useState<Record<string, string>>(readProjectBasePaths);
+  const [markKindCatalog, setMarkKindCatalog] = useState<MarkKindCatalogEntry[]>([]);
 
   const api = useMemo(() => new ApiClient(baseUrl), [baseUrl]);
 
@@ -100,6 +104,31 @@ export function WorkbenchProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     localStorage.setItem("appsec.assetId", selectedAssetId);
   }, [selectedAssetId]);
+
+  const refreshMarkKindCatalog = useCallback(async () => {
+    if (!selectedAssessmentId) {
+      setMarkKindCatalog([]);
+      return;
+    }
+    try {
+      const data = await api.getMarkKindCatalog(selectedAssessmentId);
+      setMarkKindCatalog(Array.isArray(data.entries) ? data.entries : []);
+    } catch {
+      setMarkKindCatalog([]);
+    }
+  }, [api, selectedAssessmentId]);
+
+  useEffect(() => {
+    void refreshMarkKindCatalog();
+  }, [refreshMarkKindCatalog]);
+
+  const markKindAccentByKind = useMemo(() => {
+    const acc: Record<string, string> = {};
+    for (const entry of markKindCatalog) {
+      acc[entry.kind_key.toUpperCase()] = entry.color;
+    }
+    return acc;
+  }, [markKindCatalog]);
 
   useEffect(() => {
     void refreshAssessments().catch(() => setAssessments([]));
@@ -188,9 +217,15 @@ export function WorkbenchProvider({ children }: { children: React.ReactNode }) {
     setSelectedAssessmentId: setSelectedAssessmentIdState,
     selectedAssessment: assessments.find((item) => item.id === selectedAssessmentId) ?? null,
     refreshAssessments,
+    markKindCatalog,
+    refreshMarkKindCatalog,
   };
 
-  return <WorkbenchContext.Provider value={value}>{children}</WorkbenchContext.Provider>;
+  return (
+    <MarkKindAccentContext.Provider value={markKindAccentByKind}>
+      <WorkbenchContext.Provider value={value}>{children}</WorkbenchContext.Provider>
+    </MarkKindAccentContext.Provider>
+  );
 }
 
 export function useWorkbench() {

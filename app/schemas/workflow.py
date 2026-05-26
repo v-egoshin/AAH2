@@ -1,9 +1,10 @@
+import re
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
-from app.models.enums import CheckStatus, Confidence, MarkKind, MarkStatus, SourceType
+from app.models.enums import CheckStatus, Confidence, MarkStatus, SourceType
 from app.schemas.common import new_uuid, utcnow
 
 
@@ -28,15 +29,28 @@ class ObjectUpdate(BaseModel):
     properties: dict | None = None
 
 
+_KIND_RE = re.compile(r"^[A-Z][A-Z0-9_]*$")
+
+
 class MarkCreate(BaseModel):
     object_id: UUID | None = None
     object_payload: ObjectCreate | None = None
-    kind: MarkKind
+    kind: str
     title: str
     note: str | None = None
     confidence: Confidence = Confidence.UNKNOWN
     source: SourceType = SourceType.MANUAL_JSON
     link_to_candidate_id: UUID | None = None
+
+    @field_validator("kind")
+    @classmethod
+    def normalize_mark_kind(cls, value: str) -> str:
+        key = value.strip().upper()
+        if len(key) > 64:
+            raise ValueError("mark kind too long")
+        if not _KIND_RE.match(key):
+            raise ValueError("mark kind must match [A-Z][A-Z0-9_]*")
+        return key
 
     @model_validator(mode="after")
     def validate_object_ref(self) -> "MarkCreate":

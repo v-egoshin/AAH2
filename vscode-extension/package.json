@@ -14,6 +14,8 @@
     "onView:appsecLinkedEntities",
     "onCommand:appsecWorkbench.refreshContext",
     "onCommand:appsecWorkbench.refreshLinkedEntities",
+    "onCommand:appsecWorkbench.refreshMarkKindCatalog",
+    "onCommand:appsecWorkbench.markWithKind",
     "onCommand:appsecWorkbench.selectCheckInChecks",
     "onCommand:appsecWorkbench.createAssessment",
     "onCommand:appsecWorkbench.setRecentMarkFilter",
@@ -38,6 +40,7 @@
     "onCommand:appsecWorkbench.acceptCandidate",
     "onCommand:appsecWorkbench.rejectCandidate",
     "onCommand:appsecWorkbench.setMarkDescriptionFromSelection",
+    "onCommand:appsecWorkbench.setMarkRelationDisplayName",
     "onCommand:appsecWorkbench.saveMarkDescription",
     "onCommand:appsecWorkbench.cancelMarkDescription"
   ],
@@ -114,6 +117,14 @@
         "title": "AppSec: Show Selection Actions"
       },
       {
+        "command": "appsecWorkbench.refreshMarkKindCatalog",
+        "title": "AppSec: Refresh Mark Kind Catalog"
+      },
+      {
+        "command": "appsecWorkbench.markWithKind",
+        "title": "AppSec: Mark With Dynamic Kind"
+      },
+      {
         "command": "appsecWorkbench.markNote",
         "title": "AppSec: Mark"
       },
@@ -188,6 +199,10 @@
       {
         "command": "appsecWorkbench.setMarkDescriptionFromSelection",
         "title": "AppSec: Set Mark Description"
+      },
+      {
+        "command": "appsecWorkbench.setMarkRelationDisplayName",
+        "title": "AppSec: Set Mark Display Name (Linked Entities)"
       },
       {
         "command": "appsecWorkbench.saveMarkDescription",

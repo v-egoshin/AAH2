@@ -71,6 +71,16 @@ export type MarkRecord = {
   is_dead_end?: boolean;
 };
 
+export type MarkKindCatalogEntry = {
+  id: string;
+  kind_key: string;
+  display_label: string;
+  enabled: boolean;
+  sort_order: number;
+  color: string;
+  is_builtin: boolean;
+};
+
 export type CheckRecord = {
   id: string;
   assessment_id: string;
@@ -257,6 +267,17 @@ export class ApiClient {
 
   getMarks(assessmentId: string) {
     return this.request<MarkRecord[]>(`/assessments/${assessmentId}/marks`);
+  }
+
+  getMarkKindCatalog(assessmentId: string) {
+    return this.request<{ entries: MarkKindCatalogEntry[] }>(`/assessments/${assessmentId}/mark-kind-catalog`);
+  }
+
+  patchMarkKindCatalog(assessmentId: string, entries: Array<Omit<MarkKindCatalogEntry, "id">>) {
+    return this.request<{ entries: MarkKindCatalogEntry[] }>(`/assessments/${assessmentId}/mark-kind-catalog`, {
+      method: "PATCH",
+      body: JSON.stringify({ entries }),
+    });
   }
 
   createMark(assessmentId: string, payload: JsonObject) {

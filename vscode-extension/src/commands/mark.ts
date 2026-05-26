@@ -6,9 +6,9 @@ import { getActiveCase } from "../state/activeCase";
 import { readState } from "../state/assessmentState";
 import { getRecentMarkById, getRecentMarks, pushRecentMark, RecentMarkEntry, RecentMarksPanel } from "../state/recentMarks";
 import { relativeFilePathFromUri } from "../lib/assetPath";
+import { enabledMarkKindsSorted, getMarkKindCatalogSnapshot } from "../state/markKindCatalog";
 import { showMarkDescriptionEditor } from "../views/markDescriptionWidget";
 
-type MarkKind = "SOURCE" | "SINK" | "GUARD" | "TRANSFORM" | "NOTE";
 type CheckStatus = "NOT_STARTED" | "IN_PROGRESS" | "CHECKED_OK" | "CHECKED_WEAK" | "FAILED" | "NOT_APPLICABLE" | "BLOCKED";
 
 export type SelectionTarget = {
@@ -28,7 +28,7 @@ type SelectionActionItem = vscode.QuickPickItem & {
 
 type FollowUpState = {
   target: SelectionTarget;
-  kind: MarkKind;
+  kind: string;
 };
 
 type RecentMarkActionItem = vscode.QuickPickItem & {
@@ -56,22 +56,57 @@ function getScopedPayload(provider: SelectionActionCodeLensProvider, target: Sel
   return isPayloadForTarget(payload, target) ? payload : null;
 }
 
-function candidateKind(candidate: ReviewEntity): MarkKind | null {
-  const payload = candidate.proposed_payload;
-  const rawKind = typeof payload?.kind === "string" ? payload.kind : undefined;
-  return rawKind === "SOURCE" || rawKind === "SINK" || rawKind === "GUARD" || rawKind === "TRANSFORM" ? rawKind : null;
+function markKindCodeLensTitle(kindKey?: string | null): string {
+  const k = (kindKey ?? "").toUpperCase();
+  if (!k) {
+    return "Mark";
+  }
+  const row = [...getMarkKindCatalogSnapshot()].find((entry) => entry.kind_key.toUpperCase() === k);
+  return row?.display_label ?? kindKey ?? "Mark";
 }
 
-function matchingCandidateForKind(payload: ReviewContextResponse | null, kind: MarkKind) {
+function candidateKind(candidate: ReviewEntity): string | null {
+  const payload = candidate.proposed_payload;
+  const rawKind = typeof payload?.kind === "string" ? payload.kind : undefined;
+  if (!rawKind) {
+    return null;
+  }
+  const k = rawKind.toUpperCase();
+  return k === "SOURCE" || k === "SINK" || k === "GUARD" || k === "TRANSFORM" ? k : null;
+}
+
+function matchingCandidateForKind(payload: ReviewContextResponse | null, kind: string) {
   return (payload?.candidates ?? []).find((candidate) => candidate.candidate_type === "MARK" && candidateKind(candidate) === kind);
 }
 
-function currentMarkForKind(payload: ReviewContextResponse | null, kind: MarkKind) {
-  return (payload?.marks ?? []).find((mark) => mark.kind === kind);
+function currentMarkForKind(payload: ReviewContextResponse | null, kind: string) {
+  return (payload?.marks ?? []).find((mark) => (mark.kind ?? "").toUpperCase() === kind);
 }
 
-function currentMark(payload: ReviewContextResponse | null) {
-  return payload?.marks?.[0];
+function markMatchesSelection(mark: ReviewEntity, objects: ReviewEntity[], target: SelectionTarget): boolean {
+  if (sameLocation(target, mark)) {
+    return true;
+  }
+  if (mark.object_id) {
+    const object = objects.find((item) => item.id === mark.object_id);
+    if (object && sameLocation(target, object)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function currentMark(payload: ReviewContextResponse | null, explicitTarget?: SelectionTarget | null): ReviewEntity | undefined {
+  const marks = payload?.marks;
+  if (!marks?.length) {
+    return undefined;
+  }
+  const target = explicitTarget ?? payloadContextTarget(payload);
+  if (!target) {
+    return marks[0];
+  }
+  const objects = payload?.objects ?? [];
+  return marks.find((mark) => markMatchesSelection(mark, objects, target)) ?? marks[0];
 }
 
 function payloadContextTarget(payload: ReviewContextResponse | null): SelectionTarget | null {
@@ -136,7 +171,7 @@ function getContextObject(target: SelectionTarget, payload: ReviewContextRespons
   return (payload?.objects ?? []).find((item) => sameLocation(target, item));
 }
 
-function oppositeKind(kind: MarkKind): MarkKind | null {
+function oppositeKind(kind: string): string | null {
   if (kind === "SOURCE") {
     return "SINK";
   }
@@ -146,7 +181,7 @@ function oppositeKind(kind: MarkKind): MarkKind | null {
   return null;
 }
 
-function getRecentOppositeMark(kind: MarkKind) {
+function getRecentOppositeMark(kind: string) {
   const opposite = oppositeKind(kind);
   return opposite ? getRecentMarks(opposite)[0] : null;
 }
@@ -247,11 +282,9 @@ function selectionTargetFromCommandArgs(args: unknown[]): SelectionTarget | unde
   return undefined;
 }
 
-function getCurrentMarkForTarget(provider: SelectionActionCodeLensProvider, target?: SelectionTarget) {
-  if (!target) {
-    return currentMark(provider.getContextPayload());
-  }
-  return currentMark(getScopedPayload(provider, target));
+function getCurrentMarkForTarget(provider: SelectionActionCodeLensProvider, target?: SelectionTarget): ReviewEntity | undefined {
+  const payload = target ? getScopedPayload(provider, target) : provider.getContextPayload();
+  return currentMark(payload, target);
 }
 
 function objectPayloadFromTarget(
@@ -416,7 +449,8 @@ async function linkEntityToActiveCase(api: WorkbenchApiClient, entityType: "MARK
 
 async function addCurrentMarkToActiveCase(provider: SelectionActionCodeLensProvider) {
   const payload = provider.getContextPayload();
-  const mark = currentMark(payload);
+  const target = payloadContextTarget(payload);
+  const mark = currentMark(payload, target);
   if (!mark) {
     vscode.window.showWarningMessage("AppSec: no current mark on this line");
     return;
@@ -517,7 +551,7 @@ async function rejectCandidate(candidate: ReviewEntity, provider: SelectionActio
   await refreshContext(provider);
 }
 
-async function createMark(kind: MarkKind, provider: SelectionActionCodeLensProvider, forcePrompt = false, explicitEditor?: vscode.TextEditor, explicitTarget?: SelectionTarget) {
+async function createMark(kind: string, provider: SelectionActionCodeLensProvider, forcePrompt = false, explicitEditor?: vscode.TextEditor, explicitTarget?: SelectionTarget) {
   const editor = explicitEditor ?? vscode.window.activeTextEditor;
   if (!editor) {
     return;
@@ -587,7 +621,7 @@ async function toggleCurrentMarkDeadEnd(provider: SelectionActionCodeLensProvide
   const editor = vscode.window.activeTextEditor;
   const target = explicitTarget ?? (editor ? getSelectionTarget(editor) : null);
   const payload = target ? getScopedPayload(provider, target) : provider.getContextPayload();
-  const mark = currentMark(payload);
+  const mark = currentMark(payload, target);
   if (!mark) {
     vscode.window.showWarningMessage("AppSec: no current mark on this line");
     return;
@@ -612,7 +646,7 @@ async function setMarkDescriptionFromSelection(
     vscode.window.showWarningMessage("AppSec: no selection target on this line");
     return;
   }
-  const mark = currentMark(getScopedPayload(provider, target));
+  const mark = currentMark(getScopedPayload(provider, target), target);
   if (!mark) {
     vscode.window.showWarningMessage("AppSec: no mark on this line");
     return;
@@ -631,11 +665,89 @@ async function setMarkDescriptionFromSelection(
   );
 }
 
+type ApiRelationRow = {
+  id: string;
+  predicate?: string;
+  subject_type?: string;
+  subject_id?: string;
+  object_type?: string;
+  object_id?: string;
+  properties?: Record<string, unknown>;
+};
+
+function findMarkCasePartOfRelation(rows: ApiRelationRow[], markId: string, caseId: string): ApiRelationRow | undefined {
+  return rows.find((r) =>
+    r.predicate === "PART_OF"
+    && (
+      (
+        r.subject_type?.toUpperCase() === "MARK"
+        && r.subject_id === markId
+        && r.object_type?.toUpperCase() === "CASE"
+        && r.object_id === caseId
+      )
+      || (
+        r.subject_type?.toUpperCase() === "CASE"
+        && r.subject_id === caseId
+        && r.object_type?.toUpperCase() === "MARK"
+        && r.object_id === markId
+      )
+    ),
+  );
+}
+
+async function setMarkRelationDisplayName(provider: SelectionActionCodeLensProvider, explicitTarget?: SelectionTarget) {
+  const editor = vscode.window.activeTextEditor;
+  const target = explicitTarget ?? (editor ? getSelectionTarget(editor) : null);
+  if (!target) {
+    vscode.window.showWarningMessage("AppSec: no selection target on this line");
+    return;
+  }
+  const scoped = getScopedPayload(provider, target);
+  const mark = currentMark(scoped, target);
+  if (!mark?.id) {
+    vscode.window.showWarningMessage("AppSec: no mark on this line");
+    return;
+  }
+  const activeCase = getActiveCase();
+  if (!activeCase?.id) {
+    vscode.window.showWarningMessage("AppSec: set Active Case first");
+    return;
+  }
+  const api = new WorkbenchApiClient(readState());
+  const raw = await api.getRelations();
+  const relations = (Array.isArray(raw) ? raw : []) as ApiRelationRow[];
+  const relation = findMarkCasePartOfRelation(relations, mark.id, activeCase.id);
+  if (!relation) {
+    vscode.window.showWarningMessage("AppSec: mark is not linked to active case (no PART_OF)");
+    return;
+  }
+  const properties = { ...(relation.properties ?? {}) } as Record<string, unknown>;
+  const current = String(properties.display_name ?? "").trim();
+  const value = await vscode.window.showInputBox({
+    prompt: "Display name for this mark in Linked Entities (edge to active case)",
+    value: current,
+    validateInput: (text) => (text.trim().length > 200 ? "Max 200 characters" : undefined),
+  });
+  if (value === undefined) {
+    return;
+  }
+  const trimmed = value.trim();
+  if (trimmed) {
+    properties.display_name = trimmed;
+  } else {
+    delete properties.display_name;
+  }
+  await api.updateRelation(relation.id, { properties });
+  vscode.window.showInformationMessage("AppSec: display name updated");
+  await refreshContext(provider);
+  await vscode.commands.executeCommand("appsecWorkbench.refreshLinkedEntities");
+}
+
 async function removeCurrentMark(provider: SelectionActionCodeLensProvider, explicitTarget?: SelectionTarget) {
   const editor = vscode.window.activeTextEditor;
   const target = explicitTarget ?? (editor ? getSelectionTarget(editor) : null);
   const payload = target ? getScopedPayload(provider, target) : provider.getContextPayload();
-  const mark = currentMark(payload);
+  const mark = currentMark(payload, target);
   if (!mark) {
     vscode.window.showWarningMessage("AppSec: no current mark on this line");
     return;
@@ -655,7 +767,7 @@ async function removeCurrentMark(provider: SelectionActionCodeLensProvider, expl
 }
 
 function suggestedCheckTitle(target: SelectionTarget, payload: ReviewContextResponse | null) {
-  const mark = currentMark(payload);
+  const mark = currentMark(payload, target);
   if (mark?.kind === "SINK") {
     const source = getRecentMarks("SOURCE")[0];
     return source ? `${entityLabel(source)} cannot reach ${entityLabel(mark)}` : `User-controlled input cannot reach ${entityLabel(mark)}`;
@@ -693,7 +805,7 @@ async function createCheckFromSelection(provider: SelectionActionCodeLensProvide
   });
   await linkEntityToActiveCase(api, "CHECK", check.id);
 
-  const mark = currentMark(payload);
+  const mark = currentMark(payload, target);
   if (mark) {
     await api.createRelation({
       subject_type: "CHECK",
@@ -724,8 +836,8 @@ async function createCaseFromContext(provider: SelectionActionCodeLensProvider, 
     return;
   }
   const payload = getScopedPayload(provider, target);
-  const mark = currentMark(payload);
-  const recentOpposite = mark?.kind ? getRecentOppositeMark(mark.kind as MarkKind) : null;
+  const mark = currentMark(payload, target);
+  const recentOpposite = mark?.kind ? getRecentOppositeMark(mark.kind) : null;
   const autoTitle = mark && recentOpposite
     ? `Possible ${entityLabel(mark.kind === "SOURCE" ? mark : recentOpposite)} -> ${entityLabel(mark.kind === "SINK" ? mark : recentOpposite)}`
     : `Possible ${mark ? entityLabel(mark) : target.title}`;
@@ -803,7 +915,7 @@ async function showRecentMarkActions(provider: SelectionActionCodeLensProvider, 
     return;
   }
   const scopedPayload = getScopedPayload(provider, target);
-  const mark = currentMark(scopedPayload);
+  const mark = currentMark(scopedPayload, target);
   if (!mark) {
     vscode.window.showWarningMessage("AppSec: current line needs a mark first");
     return;
@@ -828,8 +940,8 @@ async function showRecentMarkActions(provider: SelectionActionCodeLensProvider, 
         recent,
       });
     }
-  if (currentCase(scopedPayload)) {
-    items.push({
+    if (currentCase(scopedPayload)) {
+      items.push({
         label: `Add [${recent.kind}] ${recent.label} to current Case`,
         detail: recent.locator,
         action: "add_to_case",
@@ -871,7 +983,7 @@ async function applyRecentMarkAction(
     return;
   }
   const scopedPayload = getScopedPayload(provider, target);
-  const mark = currentMark(scopedPayload);
+  const mark = currentMark(scopedPayload, target);
   if (!mark) {
     vscode.window.showWarningMessage("AppSec: current line needs a mark first");
     return;
@@ -893,7 +1005,7 @@ async function attachEvidenceFromSelection(provider: SelectionActionCodeLensProv
   const payload = getScopedPayload(provider, target);
   const linkedCheck = currentCheck(payload);
   const linkedCase = currentCase(payload);
-  const linkedMark = currentMark(payload);
+  const linkedMark = currentMark(payload, target);
   const title = await vscode.window.showInputBox({ prompt: "Evidence title", value: `Code snippet: ${target.file}:${target.startLine}-${target.endLine}` });
   if (!title) {
     return;
@@ -1028,13 +1140,13 @@ export class SelectionActionCodeLensProvider implements vscode.CodeLensProvider 
 
     const range = new vscode.Range(target.startLine - 1, 0, target.startLine - 1, 0);
     const makeLens = (title: string, command: string, args: unknown[] = []) => new vscode.CodeLens(range, { title, command, arguments: args });
-  const scopedPayload = getScopedPayload(this, target);
-  const check = currentCheck(scopedPayload);
-  const mark = currentMark(scopedPayload);
-  const activeCase = getActiveCase();
-  const markInActiveCase = activeCase?.id && mark ? isEntityInCase(scopedPayload, "MARK", mark.id, activeCase.id) : false;
-  const checkInActiveCase = activeCase?.id && check ? isEntityInCase(scopedPayload, "CHECK", check.id, activeCase.id) : false;
-  const sourceCandidate = matchingCandidateForKind(scopedPayload, "SOURCE");
+    const scopedPayload = getScopedPayload(this, target);
+    const check = currentCheck(scopedPayload);
+    const mark = currentMark(scopedPayload, target);
+    const activeCase = getActiveCase();
+    const markInActiveCase = activeCase?.id && mark ? isEntityInCase(scopedPayload, "MARK", mark.id, activeCase.id) : false;
+    const checkInActiveCase = activeCase?.id && check ? isEntityInCase(scopedPayload, "CHECK", check.id, activeCase.id) : false;
+    const sourceCandidate = matchingCandidateForKind(scopedPayload, "SOURCE");
     const sinkCandidate = matchingCandidateForKind(scopedPayload, "SINK");
     const guardCandidate = matchingCandidateForKind(scopedPayload, "GUARD");
     const transformCandidate = matchingCandidateForKind(scopedPayload, "TRANSFORM");
@@ -1044,9 +1156,9 @@ export class SelectionActionCodeLensProvider implements vscode.CodeLensProvider 
 
     if (followUp) {
       return [
-        makeLens(`${followUp.kind} marked`, "appsecWorkbench.dismissFollowUp"),
+        makeLens(`${markKindCodeLensTitle(followUp.kind)} marked`, "appsecWorkbench.dismissFollowUp"),
         makeLens("Set Description", "appsecWorkbench.setMarkDescriptionFromSelection", [target]),
-        makeLens("Create Case", "appsecWorkbench.createCaseFromContext", [target]),
+        makeLens("Set display name", "appsecWorkbench.setMarkRelationDisplayName", [target]),
         makeLens(
           activeCase?.id
             ? (markInActiveCase ? `In Active Case: ${activeCase.title}` : `Add to Active Case: ${activeCase.title}`)
@@ -1064,7 +1176,6 @@ export class SelectionActionCodeLensProvider implements vscode.CodeLensProvider 
       return [
         makeLens(`Accept ${kind ?? "Candidate"}${candidate?.source ? `: ${candidate.source}` : ""}`, "appsecWorkbench.acceptCandidate", [candidate]),
         makeLens("Reject", "appsecWorkbench.rejectCandidate", [candidate]),
-        makeLens("Create Case", "appsecWorkbench.createCaseFromContext", [target]),
       ];
     }
 
@@ -1090,9 +1201,9 @@ export class SelectionActionCodeLensProvider implements vscode.CodeLensProvider 
 
     if (mark) {
       return [
-        makeLens(`${mark.kind} marked`, "appsecWorkbench.refreshContext"),
+        makeLens(`${markKindCodeLensTitle(mark.kind)} marked`, "appsecWorkbench.refreshContext"),
         makeLens("Set Description", "appsecWorkbench.setMarkDescriptionFromSelection", [target]),
-        makeLens("Create Case", "appsecWorkbench.createCaseFromContext", [target]),
+        makeLens("Set display name", "appsecWorkbench.setMarkRelationDisplayName", [target]),
         makeLens(
           activeCase?.id
             ? (markInActiveCase ? `In Active Case: ${activeCase.title}` : `Add to Active Case: ${activeCase.title}`)
@@ -1104,14 +1215,10 @@ export class SelectionActionCodeLensProvider implements vscode.CodeLensProvider 
       ];
     }
 
-    return [
-      makeLens("Mark", "appsecWorkbench.markNote", [target]),
-      makeLens("Source", "appsecWorkbench.markSource", [target]),
-      makeLens("Sink", "appsecWorkbench.markSink", [target]),
-      makeLens("Guard", "appsecWorkbench.markGuard", [target]),
-      makeLens("Transform", "appsecWorkbench.markTransform", [target]),
-      makeLens("More…", "appsecWorkbench.showSelectionActions", [target]),
-    ];
+    const catalogLenses = enabledMarkKindsSorted().map((entry) =>
+      makeLens(entry.display_label, "appsecWorkbench.markWithKind", [entry.kind_key, target]),
+    );
+    return [...catalogLenses, makeLens("More…", "appsecWorkbench.showSelectionActions", [target])];
   }
 }
 
@@ -1127,7 +1234,7 @@ async function showSelectionActions(provider: SelectionActionCodeLensProvider, e
   }
 
   const payload = getScopedPayload(provider, target);
-  const mark = currentMark(payload);
+  const mark = currentMark(payload, target);
   const check = currentCheck(payload);
   const candidate = matchingCandidateForKind(payload, "SINK")
     || matchingCandidateForKind(payload, "SOURCE")
@@ -1194,19 +1301,13 @@ async function showSelectionActions(provider: SelectionActionCodeLensProvider, e
     detail: "Override the generated mark title",
     run: async () => {
       const customKind = await vscode.window.showQuickPick(
-        [
-          { label: "Mark", markKind: "NOTE" },
-          { label: "Source", markKind: "SOURCE" },
-          { label: "Sink", markKind: "SINK" },
-          { label: "Guard", markKind: "GUARD" },
-          { label: "Transform", markKind: "TRANSFORM" },
-        ],
+        enabledMarkKindsSorted().map((entry) => ({ label: entry.display_label, markKind: entry.kind_key })),
         { placeHolder: "Choose AppSec action", ignoreFocusOut: true },
       );
       if (!customKind?.markKind) {
         return;
       }
-      await createMark(customKind.markKind as MarkKind, provider, true, targetEditor, target);
+      await createMark(customKind.markKind as string, provider, true, targetEditor, target);
     },
   });
 
@@ -1231,7 +1332,7 @@ export function registerMarkCommands(
   codeLensProvider: SelectionActionCodeLensProvider,
   recentMarksPanel: RecentMarksPanel,
 ) {
-  const markCommand = (command: string, kind: MarkKind) => {
+  const markCommand = (command: string, kind: string) => {
     context.subscriptions.push(vscode.commands.registerCommand(command, async (...args: unknown[]) => {
       const target = selectionTargetFromCommandArgs(args);
       await createMark(kind, codeLensProvider, false, undefined, target);
@@ -1249,6 +1350,22 @@ export function registerMarkCommands(
     await createMark("NOTE", codeLensProvider, false, undefined, target);
     recentMarksPanel.refresh();
   }));
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand("appsecWorkbench.markWithKind", async (kind?: string, target?: SelectionTarget) => {
+      if (!kind || typeof kind !== "string") {
+        vscode.window.showWarningMessage("AppSec: missing mark kind");
+        return;
+      }
+      const resolvedTarget = target ?? selectionTargetFromCommandArgs([]);
+      if (!resolvedTarget) {
+        vscode.window.showWarningMessage("AppSec: missing selection target");
+        return;
+      }
+      await createMark(kind.trim().toUpperCase(), codeLensProvider, false, undefined, resolvedTarget);
+      recentMarksPanel.refresh();
+    }),
+  );
 
   context.subscriptions.push(vscode.commands.registerCommand("appsecWorkbench.acceptCandidate", async (candidate?: ReviewEntity) => {
     if (!candidate) {
@@ -1269,6 +1386,7 @@ export function registerMarkCommands(
   context.subscriptions.push(vscode.commands.registerCommand("appsecWorkbench.removeCurrentMark", async (...args: unknown[]) => removeCurrentMark(codeLensProvider, selectionTargetFromCommandArgs(args))));
   context.subscriptions.push(vscode.commands.registerCommand("appsecWorkbench.toggleMarkDeadEnd", async (...args: unknown[]) => toggleCurrentMarkDeadEnd(codeLensProvider, selectionTargetFromCommandArgs(args))));
   context.subscriptions.push(vscode.commands.registerCommand("appsecWorkbench.setMarkDescriptionFromSelection", async (...args: unknown[]) => setMarkDescriptionFromSelection(codeLensProvider, selectionTargetFromCommandArgs(args))));
+  context.subscriptions.push(vscode.commands.registerCommand("appsecWorkbench.setMarkRelationDisplayName", async (...args: unknown[]) => setMarkRelationDisplayName(codeLensProvider, selectionTargetFromCommandArgs(args))));
   context.subscriptions.push(vscode.commands.registerCommand("appsecWorkbench.addCurrentMarkToActiveCase", async () => addCurrentMarkToActiveCase(codeLensProvider)));
   context.subscriptions.push(vscode.commands.registerCommand("appsecWorkbench.addCurrentCheckToActiveCase", async () => addCurrentCheckToActiveCase(codeLensProvider)));
   context.subscriptions.push(vscode.commands.registerCommand("appsecWorkbench.addRecentMarkToActiveCase", async (recentId: string) => addRecentMarkToActiveCase(codeLensProvider, recentId)));

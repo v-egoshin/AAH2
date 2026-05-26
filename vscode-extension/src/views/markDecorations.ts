@@ -1,6 +1,13 @@
 import * as vscode from "vscode";
 
 import { ReviewContextResponse, ReviewEntity } from "../api/client";
+import {
+  getMarkKindCatalogSnapshot,
+  gutterColoredDotSvgDataUri,
+  gutterIconFileForStructuredKind,
+  hexToRgbWithAlpha,
+  type MarkKindCatalogRow,
+} from "../state/markKindCatalog";
 
 type DecorationBundle = {
   kind: string;
@@ -11,27 +18,27 @@ function iconPath(context: vscode.ExtensionContext, name: string) {
   return vscode.Uri.joinPath(context.extensionUri, "media", name);
 }
 
-function makeDecoration(
-  context: vscode.ExtensionContext,
-  kind: string,
-  iconName: string,
-  color: string,
-  overviewColor: string,
-): DecorationBundle {
+function makeDecoration(kind: string, gutterIconPath: vscode.Uri, overviewColor: string): DecorationBundle {
+  const kindNormalized = kind.toUpperCase();
   return {
-    kind,
+    kind: kindNormalized,
     decoration: vscode.window.createTextEditorDecorationType({
-      isWholeLine: true,
-      gutterIconPath: iconPath(context, iconName),
+      isWholeLine: false,
+      gutterIconPath,
       gutterIconSize: "contain",
       overviewRulerColor: overviewColor,
       overviewRulerLane: vscode.OverviewRulerLane.Left,
-      backgroundColor: `${color}14`,
-      borderColor: `${color}55`,
-      borderWidth: "0 0 0 3px",
-      borderStyle: "solid",
     }),
   };
+}
+
+function makeDecorationDynamic(context: vscode.ExtensionContext, row: MarkKindCatalogRow): DecorationBundle {
+  const structural = gutterIconFileForStructuredKind(row.kind_key);
+  const gutterIconPath =
+    structural != null
+      ? iconPath(context, structural)
+      : vscode.Uri.parse(gutterColoredDotSvgDataUri(row.color));
+  return makeDecoration(row.kind_key, gutterIconPath, hexToRgbWithAlpha(row.color, 0.82));
 }
 
 function collectObjectRanges(payload: ReviewContextResponse | null) {
@@ -220,23 +227,36 @@ function checkHover(check: ReviewEntity, relations: ReviewEntity[], cases: Revie
 }
 
 export class MarkDecorations {
-  private readonly bundles: DecorationBundle[];
+  private bundles: DecorationBundle[] = [];
+  private readonly extensionContext: vscode.ExtensionContext;
 
   constructor(context: vscode.ExtensionContext) {
+    this.extensionContext = context;
+    this.rebuildFromCatalog(getMarkKindCatalogSnapshot());
+  }
+
+  rebuildFromCatalog(rows: readonly MarkKindCatalogRow[]) {
+    this.disposeDecorationsOnly();
+    const ordered = [...rows].sort((a, b) => a.sort_order - b.sort_order || a.kind_key.localeCompare(b.kind_key));
     this.bundles = [
-      makeDecoration(context, "SOURCE", "source.svg", "#15803d", "rgba(21,128,61,0.8)"),
-      makeDecoration(context, "SINK", "sink.svg", "#b91c1c", "rgba(185,28,28,0.85)"),
-      makeDecoration(context, "GUARD", "guard.svg", "#1d4ed8", "rgba(29,78,216,0.8)"),
-      makeDecoration(context, "TRANSFORM", "transform.svg", "#a16207", "rgba(161,98,7,0.8)"),
-      makeDecoration(context, "NOTE", "mark.svg", "#475569", "rgba(71,85,105,0.8)"),
-      makeDecoration(context, "CHECK", "check.svg", "#2563eb", "rgba(37,99,235,0.82)"),
+      ...ordered.map((row) => makeDecorationDynamic(this.extensionContext, row)),
+      makeDecoration(
+        "CHECK",
+        iconPath(this.extensionContext, "check.svg"),
+        "rgba(37,99,235,0.82)",
+      ),
     ];
   }
 
-  dispose() {
+  disposeDecorationsOnly() {
     for (const bundle of this.bundles) {
       bundle.decoration.dispose();
     }
+    this.bundles = [];
+  }
+
+  dispose() {
+    this.disposeDecorationsOnly();
   }
 
   apply(editor: vscode.TextEditor | undefined, payload: ReviewContextResponse | null) {
@@ -268,7 +288,7 @@ export class MarkDecorations {
             return acc;
           }, [])
         : relevantMarks
-            .filter((mark) => mark.kind === bundle.kind)
+            .filter((mark) => (mark.kind ?? "").toUpperCase() === bundle.kind.toUpperCase())
             .reduce<vscode.DecorationOptions[]>((acc, mark) => {
               const range = rangeForMark(mark, objectsById);
               if (!range) {
