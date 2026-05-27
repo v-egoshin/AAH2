@@ -53,8 +53,14 @@ function registerAssessmentCommands(context) {
             return;
         }
         const description = (await vscode.window.showInputBox({ prompt: "Assessment description", value: "" })) ?? "";
-        const created = await api.createAssessment({ title: trimmedTitle, description });
-        await (0, assessmentState_1.updateAssessmentState)({ assessmentId: created.id });
-        vscode.window.showInformationMessage(`AppSec: assessment created: ${created.title} (${created.id})`);
+        try {
+            const created = await api.createAssessment({ title: trimmedTitle, description });
+            await (0, assessmentState_1.updateAssessmentState)({ assessmentId: created.id });
+            vscode.window.showInformationMessage(`AppSec: assessment created: ${created.title} (${created.id})`);
+        }
+        catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            vscode.window.showErrorMessage(`AppSec: не удалось создать assessment: ${message}`);
+        }
     }));
 }

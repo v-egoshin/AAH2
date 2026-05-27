@@ -40,6 +40,7 @@ export function activate(context: vscode.ExtensionContext) {
   const recentMarksPanel = new RecentMarksPanel();
   const markDecorations = new MarkDecorations(context);
   context.subscriptions.push({ dispose: () => markDecorations.dispose() });
+  markDecorations.setHoverLocatorSync((locator) => linkedEntitiesPanel.setHoveredLocator(locator));
 
   const codeLensProvider = new SelectionActionCodeLensProvider();
 
@@ -164,15 +165,38 @@ export function activate(context: vscode.ExtensionContext) {
     editor.selection = new vscode.Selection(position, position);
     editor.revealRange(new vscode.Range(position, position), vscode.TextEditorRevealType.InCenter);
   }));
+  context.subscriptions.push(
+    vscode.languages.registerHoverProvider("*", {
+      provideHover(document, position) {
+        const editor = vscode.window.activeTextEditor;
+        if (!editor || editor.document !== document) {
+          return null;
+        }
+        const hover = markDecorations.getHoverForLine(position.line);
+        if (hover) {
+          markDecorations.setHoveredLine(position.line);
+          return hover;
+        }
+        markDecorations.clearHoverHighlight();
+        return null;
+      },
+    }),
+  );
+  context.subscriptions.push(vscode.window.onDidChangeWindowState((state) => {
+    if (!state.focused) {
+      markDecorations.clearHoverHighlight();
+    }
+  }));
   context.subscriptions.push(vscode.window.onDidChangeTextEditorSelection(() => {
     log("Selection changed");
     codeLensProvider.onSelectionTargetChanged(vscode.window.activeTextEditor ? getSelectionTarget(vscode.window.activeTextEditor) : null);
     codeLensProvider.refresh();
     scheduleRefresh(false, 180);
   }));
-  context.subscriptions.push(vscode.window.onDidChangeActiveTextEditor(() => {
+  context.subscriptions.push(vscode.window.onDidChangeActiveTextEditor((editor) => {
     log("Active editor changed");
-    codeLensProvider.onSelectionTargetChanged(vscode.window.activeTextEditor ? getSelectionTarget(vscode.window.activeTextEditor) : null);
+    markDecorations.clearHoverHighlight();
+    codeLensProvider.onSelectionTargetChanged(editor ? getSelectionTarget(editor) : null);
     codeLensProvider.refresh();
     scheduleRefresh(true, 60);
   }));

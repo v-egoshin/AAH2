@@ -265,6 +265,7 @@
   },
   "scripts": {
     "build": "tsc -p .",
+    "test": "vitest run",
     "build:webview-linked-entities": "vite build --config webview-linked-entities/vite.config.ts",
     "build:all": "npm run build && npm run build:webview-linked-entities",
     "deploy:local": "../scripts/deploy_vscode_extension.sh"
@@ -275,7 +276,8 @@
     "@types/vscode": "^1.90.0",
     "@vitejs/plugin-react": "^4.7.0",
     "typescript": "^5.7.2",
-    "vite": "^5.4.21"
+    "vite": "^5.4.21",
+    "vitest": "^2.1.8"
   },
   "dependencies": {
     "react": "^18.3.1",

@@ -248,6 +248,12 @@ class LinkedEntitiesPanel {
             activeLocator: activeEditorLocator(),
         });
     }
+    setHoveredLocator(locator) {
+        this.view?.webview.postMessage({
+            type: "activeLocator",
+            activeLocator: locator,
+        });
+    }
     postMutateResult(webview, requestId, ok, error) {
         webview.postMessage({
             type: "mutateResult",
@@ -327,6 +333,15 @@ class LinkedEntitiesPanel {
                         throw new Error("Invalid toggleDeadEnd payload");
                     }
                     await (0, linkedEntitiesMutations_1.toggleMarksDeadEnd)(client, markIds, isDeadEnd);
+                    break;
+                }
+                case "changeMarkKind": {
+                    const markId = String(payload.markId ?? "");
+                    const kind = String(payload.kind ?? "");
+                    if (!markId || !kind) {
+                        throw new Error("Invalid changeMarkKind payload");
+                    }
+                    await (0, linkedEntitiesMutations_1.changeMarkKind)(client, markId, kind);
                     break;
                 }
                 case "patchRelationPropertiesBatch": {
@@ -414,6 +429,7 @@ class LinkedEntitiesPanel {
             graphData: undefined,
             graphError: undefined,
             markKindAccentByKind: undefined,
+            markKindCatalogEntries: undefined,
         };
         const client = this.createApiClient(state);
         try {
@@ -440,10 +456,10 @@ class LinkedEntitiesPanel {
                 (0, activeCase_1.setActiveCase)(null);
             }
             const nextCaseId = scopedActiveCase?.id ?? null;
-            let locatorForEmbed = activeEditorLocator();
-            if (this.linkedEntitiesPreviousCaseId !== undefined && this.linkedEntitiesPreviousCaseId !== nextCaseId) {
-                locatorForEmbed = null;
-            }
+            // Подсветка узлов в Linked Entities привязана к hover в редакторе, а не к selection.
+            // При refresh/смене кейса не выставляем locator — иначе после создания mark выделение в редакторе
+            // совпадало бы с новым mark и панель оставляла бы на нём рамку.
+            const locatorForEmbed = null;
             this.linkedEntitiesPreviousCaseId = nextCaseId;
             return {
                 ...base,
@@ -457,6 +473,15 @@ class LinkedEntitiesPanel {
                 projectBasePaths,
                 graphError: graph.graphError,
                 markKindAccentByKind: (0, markKindCatalog_1.getMarkKindAccentByKindMap)(),
+                markKindCatalogEntries: (0, markKindCatalog_1.enabledMarkKindsSorted)().map((entry) => ({
+                    id: entry.id ?? entry.kind_key,
+                    kind_key: entry.kind_key,
+                    display_label: entry.display_label,
+                    enabled: entry.enabled,
+                    sort_order: entry.sort_order,
+                    color: entry.color,
+                    is_builtin: entry.is_builtin,
+                })),
                 activeLocator: locatorForEmbed,
                 configVersion: ++this.configVersion,
             };

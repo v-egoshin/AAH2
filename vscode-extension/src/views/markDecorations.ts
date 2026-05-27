@@ -3,42 +3,49 @@ import * as vscode from "vscode";
 import { ReviewContextResponse, ReviewEntity } from "../api/client";
 import {
   getMarkKindCatalogSnapshot,
-  gutterColoredDotSvgDataUri,
-  gutterIconFileForStructuredKind,
+  glyphForStructuredKind,
   hexToRgbWithAlpha,
   type MarkKindCatalogRow,
 } from "../state/markKindCatalog";
+import { relativeFilePathFromUri } from "../lib/assetPath";
+import {
+  buildGutterHoverHighlightGroup,
+  buildLineDecorationGroups,
+  collectLineGutterContext,
+  type GutterSpan,
+  type LineGutterContext,
+} from "./markGutterRails";
+
+export type HoverLocator = {
+  file: string;
+  startLine: number;
+  endLine: number;
+};
+
+export type HoverLocatorSync = (locator: HoverLocator | null) => void;
 
 type DecorationBundle = {
   kind: string;
   decoration: vscode.TextEditorDecorationType;
 };
 
-function iconPath(context: vscode.ExtensionContext, name: string) {
-  return vscode.Uri.joinPath(context.extensionUri, "media", name);
+const CHECK_COLOR = "#2563eb";
+const HOVER_HIGHLIGHT_ALPHA = 0.16;
+
+function normalizeHighlightColor(hex: string): string {
+  const raw = hex.trim();
+  const withHash = /^#/.test(raw) ? raw : `#${raw}`;
+  return /^#[0-9A-Fa-f]{6}$/.test(withHash) ? withHash.toUpperCase() : "#475569";
 }
 
-function makeDecoration(kind: string, gutterIconPath: vscode.Uri, overviewColor: string): DecorationBundle {
-  const kindNormalized = kind.toUpperCase();
+function makeOverviewDecoration(kind: string, overviewColor: string): DecorationBundle {
   return {
-    kind: kindNormalized,
+    kind: kind.toUpperCase(),
     decoration: vscode.window.createTextEditorDecorationType({
-      isWholeLine: false,
-      gutterIconPath,
-      gutterIconSize: "contain",
       overviewRulerColor: overviewColor,
       overviewRulerLane: vscode.OverviewRulerLane.Left,
     }),
   };
-}
-
-function makeDecorationDynamic(context: vscode.ExtensionContext, row: MarkKindCatalogRow): DecorationBundle {
-  const structural = gutterIconFileForStructuredKind(row.kind_key);
-  const gutterIconPath =
-    structural != null
-      ? iconPath(context, structural)
-      : vscode.Uri.parse(gutterColoredDotSvgDataUri(row.color));
-  return makeDecoration(row.kind_key, gutterIconPath, hexToRgbWithAlpha(row.color, 0.82));
 }
 
 function collectObjectRanges(payload: ReviewContextResponse | null) {
@@ -207,7 +214,9 @@ function markHover(
   if (relatedCases.length) {
     lines.push(`Cases: ${relatedCases.join(", ")}`);
   }
-  return new vscode.MarkdownString(lines.join("\n\n"));
+  const hover = new vscode.MarkdownString(lines.join("\n\n"));
+  hover.isTrusted = true;
+  return hover;
 }
 
 function checkHover(check: ReviewEntity, relations: ReviewEntity[], cases: ReviewEntity[]) {
@@ -223,29 +232,240 @@ function checkHover(check: ReviewEntity, relations: ReviewEntity[], cases: Revie
   if (relatedCases.length) {
     lines.push(`Cases: ${relatedCases.join(", ")}`);
   }
-  return new vscode.MarkdownString(lines.join("\n\n"));
+  const hover = new vscode.MarkdownString(lines.join("\n\n"));
+  hover.isTrusted = true;
+  return hover;
 }
 
 export class MarkDecorations {
   private bundles: DecorationBundle[] = [];
-  private readonly extensionContext: vscode.ExtensionContext;
+  private readonly dynamicGutterDecorations = new Map<string, vscode.TextEditorDecorationType>();
+  private readonly dynamicGutterHoverDecorations = new Map<string, vscode.TextEditorDecorationType>();
+  private readonly dynamicHighlightDecorations = new Map<string, vscode.TextEditorDecorationType>();
+  private readonly gutterSvgCache = new Map<string, vscode.Uri>();
+  private readonly catalogByKind = new Map<string, MarkKindCatalogRow>();
+  private currentSpans: GutterSpan[] = [];
+  private gutterContext: LineGutterContext = { lineEntries: new Map() };
+  private currentEditor: vscode.TextEditor | undefined;
+  private hoveredLine: number | null = null;
+  private hoverLocatorSync: HoverLocatorSync | null = null;
+  private lastEmittedLocatorKey: string | null = null;
 
-  constructor(context: vscode.ExtensionContext) {
-    this.extensionContext = context;
+  constructor(_context: vscode.ExtensionContext) {
     this.rebuildFromCatalog(getMarkKindCatalogSnapshot());
+  }
+
+  setHoverLocatorSync(sync: HoverLocatorSync | null) {
+    this.hoverLocatorSync = sync;
+  }
+
+  private emitHoverLocator(locator: HoverLocator | null) {
+    const key = locator ? `${locator.file}:${locator.startLine}:${locator.endLine}` : null;
+    if (key === this.lastEmittedLocatorKey) {
+      return;
+    }
+    this.lastEmittedLocatorKey = key;
+    this.hoverLocatorSync?.(locator);
+  }
+
+  private locatorForLine(line: number): HoverLocator | null {
+    if (!this.currentEditor) {
+      return null;
+    }
+    const matching = this.currentSpans.filter(
+      (span) => line >= span.range.start.line && line <= span.range.end.line,
+    );
+    if (!matching.length) {
+      return null;
+    }
+    let best = matching[0];
+    for (const span of matching) {
+      const bestLen = best.range.end.line - best.range.start.line;
+      const spanLen = span.range.end.line - span.range.start.line;
+      if (spanLen < bestLen) {
+        best = span;
+      }
+    }
+    return {
+      file: relativeFilePathFromUri(this.currentEditor.document.uri),
+      startLine: best.range.start.line + 1,
+      endLine: best.range.end.line + 1,
+    };
   }
 
   rebuildFromCatalog(rows: readonly MarkKindCatalogRow[]) {
     this.disposeDecorationsOnly();
+    this.catalogByKind.clear();
     const ordered = [...rows].sort((a, b) => a.sort_order - b.sort_order || a.kind_key.localeCompare(b.kind_key));
+    for (const row of ordered) {
+      this.catalogByKind.set(row.kind_key.toUpperCase(), row);
+    }
     this.bundles = [
-      ...ordered.map((row) => makeDecorationDynamic(this.extensionContext, row)),
-      makeDecoration(
-        "CHECK",
-        iconPath(this.extensionContext, "check.svg"),
-        "rgba(37,99,235,0.82)",
-      ),
+      ...ordered.map((row) => makeOverviewDecoration(row.kind_key, hexToRgbWithAlpha(row.color, 0.82))),
+      makeOverviewDecoration("CHECK", hexToRgbWithAlpha(CHECK_COLOR, 0.82)),
     ];
+  }
+
+  private resolveGutterSvgUri(cacheKey: string, svg: string): vscode.Uri {
+    const cached = this.gutterSvgCache.get(cacheKey);
+    if (cached) {
+      return cached;
+    }
+    const uri = vscode.Uri.parse(`data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`);
+    this.gutterSvgCache.set(cacheKey, uri);
+    return uri;
+  }
+
+  private getGutterDecoration(cacheKey: string, svg: string): vscode.TextEditorDecorationType {
+    const existing = this.dynamicGutterDecorations.get(cacheKey);
+    if (existing) {
+      return existing;
+    }
+    const decoration = vscode.window.createTextEditorDecorationType({
+      gutterIconPath: this.resolveGutterSvgUri(cacheKey, svg),
+      gutterIconSize: "contain",
+    });
+    this.dynamicGutterDecorations.set(cacheKey, decoration);
+    return decoration;
+  }
+
+  private syncDynamicGutterDecorations(activeKeys: ReadonlySet<string>) {
+    for (const [cacheKey, decoration] of this.dynamicGutterDecorations) {
+      if (!activeKeys.has(cacheKey)) {
+        decoration.dispose();
+        this.dynamicGutterDecorations.delete(cacheKey);
+        this.gutterSvgCache.delete(cacheKey);
+      }
+    }
+  }
+
+  private getGutterHoverDecoration(cacheKey: string, svg: string): vscode.TextEditorDecorationType {
+    const existing = this.dynamicGutterHoverDecorations.get(cacheKey);
+    if (existing) {
+      return existing;
+    }
+    const decoration = vscode.window.createTextEditorDecorationType({
+      gutterIconPath: this.resolveGutterSvgUri(`hover:${cacheKey}`, svg),
+      gutterIconSize: "contain",
+    });
+    this.dynamicGutterHoverDecorations.set(cacheKey, decoration);
+    return decoration;
+  }
+
+  private syncDynamicGutterHoverDecorations(activeKeys: ReadonlySet<string>) {
+    for (const [cacheKey, decoration] of this.dynamicGutterHoverDecorations) {
+      if (!activeKeys.has(cacheKey)) {
+        decoration.dispose();
+        this.dynamicGutterHoverDecorations.delete(cacheKey);
+        this.gutterSvgCache.delete(`hover:${cacheKey}`);
+      }
+    }
+  }
+
+  private clearGutterHoverDecorations() {
+    if (!this.currentEditor) {
+      return;
+    }
+    for (const decoration of this.dynamicGutterHoverDecorations.values()) {
+      this.currentEditor.setDecorations(decoration, []);
+    }
+  }
+
+  private getHighlightDecoration(color: string): vscode.TextEditorDecorationType {
+    const key = normalizeHighlightColor(color);
+    const existing = this.dynamicHighlightDecorations.get(key);
+    if (existing) {
+      return existing;
+    }
+    const decoration = vscode.window.createTextEditorDecorationType({
+      isWholeLine: true,
+      backgroundColor: hexToRgbWithAlpha(key, HOVER_HIGHLIGHT_ALPHA),
+    });
+    this.dynamicHighlightDecorations.set(key, decoration);
+    return decoration;
+  }
+
+  private clearBlockHighlightDecorations() {
+    if (!this.currentEditor) {
+      return;
+    }
+    for (const decoration of this.dynamicHighlightDecorations.values()) {
+      this.currentEditor.setDecorations(decoration, []);
+    }
+  }
+
+  private applyBlockHoverHighlight(line: number) {
+    if (!this.currentEditor) {
+      return;
+    }
+    const matching = this.currentSpans.filter(
+      (span) => line >= span.range.start.line && line <= span.range.end.line,
+    );
+    this.clearBlockHighlightDecorations();
+    if (!matching.length) {
+      return;
+    }
+
+    const byColor = new Map<string, vscode.DecorationOptions[]>();
+    for (const span of matching) {
+      const key = normalizeHighlightColor(span.color);
+      const options = byColor.get(key) ?? [];
+      options.push({ range: span.range });
+      byColor.set(key, options);
+    }
+
+    for (const [color, options] of byColor) {
+      const decoration = this.getHighlightDecoration(color);
+      this.currentEditor.setDecorations(decoration, options);
+    }
+  }
+
+  private applyGutterHoverHighlight(line: number) {
+    if (!this.currentEditor) {
+      return;
+    }
+    this.clearGutterHoverDecorations();
+    const entries = this.gutterContext.lineEntries.get(line);
+    const group = entries
+      ? buildGutterHoverHighlightGroup(line, entries)
+      : null;
+    const activeKeys = new Set(group ? [group.cacheKey] : []);
+    this.syncDynamicGutterHoverDecorations(activeKeys);
+    if (!group) {
+      return;
+    }
+    const decoration = this.getGutterHoverDecoration(group.cacheKey, group.svg);
+    this.currentEditor.setDecorations(decoration, group.options);
+  }
+
+  private applyHoverHighlight(line: number) {
+    this.applyGutterHoverHighlight(line);
+    this.applyBlockHoverHighlight(line);
+  }
+
+  clearHoverHighlight() {
+    this.hoveredLine = null;
+    this.clearGutterHoverDecorations();
+    this.clearBlockHighlightDecorations();
+    this.emitHoverLocator(null);
+  }
+
+  setHoveredLine(line: number | null) {
+    if (line === null || !this.currentEditor) {
+      this.clearHoverHighlight();
+      return;
+    }
+
+    if (!this.gutterContext.lineEntries.has(line)) {
+      this.clearHoverHighlight();
+      return;
+    }
+
+    if (this.hoveredLine !== line) {
+      this.hoveredLine = line;
+      this.applyHoverHighlight(line);
+    }
+    this.emitHoverLocator(this.locatorForLine(line));
   }
 
   disposeDecorationsOnly() {
@@ -253,6 +473,23 @@ export class MarkDecorations {
       bundle.decoration.dispose();
     }
     this.bundles = [];
+    for (const decoration of this.dynamicGutterDecorations.values()) {
+      decoration.dispose();
+    }
+    this.dynamicGutterDecorations.clear();
+    for (const decoration of this.dynamicGutterHoverDecorations.values()) {
+      decoration.dispose();
+    }
+    this.dynamicGutterHoverDecorations.clear();
+    for (const decoration of this.dynamicHighlightDecorations.values()) {
+      decoration.dispose();
+    }
+    this.dynamicHighlightDecorations.clear();
+    this.gutterSvgCache.clear();
+    this.currentSpans = [];
+    this.gutterContext = { lineEntries: new Map() };
+    this.currentEditor = undefined;
+    this.hoveredLine = null;
   }
 
   dispose() {
@@ -264,6 +501,8 @@ export class MarkDecorations {
       return;
     }
 
+    this.clearHoverHighlight();
+    this.currentEditor = editor;
     const objectsById = collectObjectRanges(payload);
     const marksById = collectEntities([...(payload?.marks ?? []), ...(payload?.nearby_marks ?? [])]);
     const evidenceById = collectEntities(payload?.evidence ?? []);
@@ -274,33 +513,88 @@ export class MarkDecorations {
     const relevantChecks = payload?.checks ?? [];
     const relations = payload?.relations ?? [];
     const cases = payload?.cases ?? [];
-    for (const bundle of this.bundles) {
-      const ranges = bundle.kind === "CHECK"
-        ? relevantChecks.reduce<vscode.DecorationOptions[]>((acc, check) => {
-            const range = rangeForCheck(check, objectsById, marksById, evidenceById, relations);
-            if (!range) {
-              return acc;
-            }
-            acc.push({
-              range,
-              hoverMessage: checkHover(check, relations, cases),
-            });
-            return acc;
-          }, [])
-        : relevantMarks
-            .filter((mark) => (mark.kind ?? "").toUpperCase() === bundle.kind.toUpperCase())
-            .reduce<vscode.DecorationOptions[]>((acc, mark) => {
-              const range = rangeForMark(mark, objectsById);
-              if (!range) {
-                return acc;
-              }
-              acc.push({
-                range,
-                hoverMessage: markHover(mark, objectsById, relations, cases),
-              });
-              return acc;
-            }, []);
-      editor.setDecorations(bundle.decoration, ranges);
+
+    const spans: GutterSpan[] = [];
+    for (const mark of relevantMarks) {
+      if (!mark.id) {
+        continue;
+      }
+      const range = rangeForMark(mark, objectsById);
+      if (!range) {
+        continue;
+      }
+      const kind = (mark.kind ?? "NOTE").toUpperCase();
+      const catalogRow = this.catalogByKind.get(kind);
+      spans.push({
+        entityId: mark.id,
+        kind,
+        color: catalogRow?.color ?? "#475569",
+        glyph: glyphForStructuredKind(kind),
+        range,
+        hoverMessage: markHover(mark, objectsById, relations, cases),
+      });
     }
+
+    for (const check of relevantChecks) {
+      if (!check.id) {
+        continue;
+      }
+      const range = rangeForCheck(check, objectsById, marksById, evidenceById, relations);
+      if (!range) {
+        continue;
+      }
+      spans.push({
+        entityId: check.id,
+        kind: "CHECK",
+        color: CHECK_COLOR,
+        glyph: glyphForStructuredKind("CHECK"),
+        range,
+        hoverMessage: checkHover(check, relations, cases),
+      });
+    }
+
+    this.gutterContext = collectLineGutterContext(spans);
+    const gutterGroups = buildLineDecorationGroups(spans);
+    const activeGutterKeys = new Set(gutterGroups.map((group) => group.cacheKey));
+    this.syncDynamicGutterDecorations(activeGutterKeys);
+    for (const group of gutterGroups) {
+      const decoration = this.getGutterDecoration(group.cacheKey, group.svg);
+      editor.setDecorations(decoration, group.options);
+    }
+    for (const [cacheKey, decoration] of this.dynamicGutterDecorations) {
+      if (!activeGutterKeys.has(cacheKey)) {
+        editor.setDecorations(decoration, []);
+      }
+    }
+
+    if (!gutterGroups.length) {
+      for (const decoration of this.dynamicGutterDecorations.values()) {
+        editor.setDecorations(decoration, []);
+      }
+    }
+
+    for (const bundle of this.bundles) {
+      const overviewOptions = spans
+        .filter((span) => span.kind === bundle.kind)
+        .map((span) => ({
+          range: span.range,
+        }));
+      editor.setDecorations(bundle.decoration, overviewOptions);
+    }
+
+    this.currentSpans = spans;
+    if (this.hoveredLine !== null) {
+      this.applyHoverHighlight(this.hoveredLine);
+    }
+  }
+
+  getHoverForLine(line: number): vscode.Hover | null {
+    const matching = this.currentSpans.filter(
+      (span) => line >= span.range.start.line && line <= span.range.end.line,
+    );
+    if (!matching.length) {
+      return null;
+    }
+    return new vscode.Hover(matching.map((span) => span.hoverMessage));
   }
 }

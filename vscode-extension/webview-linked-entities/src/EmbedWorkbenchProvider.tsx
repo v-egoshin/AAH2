@@ -29,6 +29,8 @@ export type EmbedWorkbenchConfig = {
   graphError?: string;
   /** From extension host (same snapshot as editor decorations); avoids failed fetches in webview */
   markKindAccentByKind?: Record<string, string>;
+  /** Full catalog entries from extension host for context-menu type changes */
+  markKindCatalogEntries?: MarkKindCatalogEntry[];
   configVersion?: number;
 };
 
@@ -36,6 +38,7 @@ type EmbedWorkbenchContextValue = {
   api: ApiClient;
   selectedAssessmentId: string;
   selectedAssetId: string;
+  markKindCatalog: MarkKindCatalogEntry[];
   getProjectBasePathForAsset: (assetId?: string | null) => string;
   getWorkspaceRoot: () => string;
   setProjectBasePathForAsset: (assetId: string, value: string) => void;
@@ -69,8 +72,8 @@ export function EmbedWorkbenchProvider({
       setMarkKindCatalog([]);
       return;
     }
-    if (config.markKindAccentByKind && Object.keys(config.markKindAccentByKind).length > 0) {
-      setMarkKindCatalog([]);
+    if (Array.isArray(config.markKindCatalogEntries) && config.markKindCatalogEntries.length > 0) {
+      setMarkKindCatalog(config.markKindCatalogEntries);
       return;
     }
     let cancelled = false;
@@ -89,7 +92,7 @@ export function EmbedWorkbenchProvider({
     return () => {
       cancelled = true;
     };
-  }, [api, config.assessmentId, config.configVersion, config.markKindAccentByKind]);
+  }, [api, config.assessmentId, config.configVersion, config.markKindCatalogEntries]);
 
   const markKindAccentByKind = useMemo(() => {
     const fromHost = config.markKindAccentByKind;
@@ -107,6 +110,7 @@ export function EmbedWorkbenchProvider({
     api,
     selectedAssessmentId: config.assessmentId,
     selectedAssetId: config.assetId,
+    markKindCatalog,
     getProjectBasePathForAsset: (assetId?: string | null) => {
       if (!assetId) {
         return projectBasePathByAsset[config.assetId] ?? "";
@@ -117,7 +121,7 @@ export function EmbedWorkbenchProvider({
     setProjectBasePathForAsset: (assetId: string, path: string) => {
       setProjectBasePathByAsset((current) => ({ ...current, [assetId]: path }));
     },
-  }), [api, config.assessmentId, config.assetId, config.workspaceRoot, projectBasePathByAsset]);
+  }), [api, config.assessmentId, config.assetId, config.workspaceRoot, markKindCatalog, projectBasePathByAsset]);
 
   return (
     <MarkKindAccentContext.Provider value={markKindAccentByKind}>
@@ -150,5 +154,7 @@ export function useEmbedWorkbenchBridge() {
     baseUrl: "",
     setBaseUrl: () => undefined,
     refreshAssessments: async () => undefined,
+    markKindCatalog: embed.markKindCatalog,
+    refreshMarkKindCatalog: async () => undefined,
   };
 }

@@ -1,202 +1,37 @@
 import * as vscode from "vscode";
 
-const CONTROLLER_ID = "appsec-mark-description";
-const CONTEXT_ACTIVE = "appsecWorkbench.markDescriptionActive";
+// Раньше использовался inline-виджет vscode.comments для ввода описания, но VS Code
+// не синхронизирует текст inline-редактора обратно в Comment.body — наша title-кнопка
+// "Save" не имела доступа к введённому тексту. Перешли на vscode.window.showInputBox:
+// API простое, обрабатывает Enter/Escape сам и не требует синхронизации состояния.
 
-export class MarkDescriptionComment implements vscode.Comment {
-  savedBody: string | vscode.MarkdownString;
-
-  constructor(
-    public body: string | vscode.MarkdownString,
-    public mode: vscode.CommentMode,
-    public author: vscode.CommentAuthorInformation,
-    public parent: vscode.CommentThread,
-  ) {
-    this.savedBody = body;
-  }
-}
-
-type DescriptionAnchor = {
-  uri: vscode.Uri;
-  line: number;
-};
-
-type ActiveSession = {
-  markId: string;
-  anchor: DescriptionAnchor;
-  thread: vscode.CommentThread;
-  initialBody: string;
-  onSave: (text: string) => Promise<void>;
-  onCancel: () => void;
-};
-
-let controller: vscode.CommentController | null = null;
-let descriptionAnchor: DescriptionAnchor | null = null;
-let activeSession: ActiveSession | null = null;
-
-function commentBodyText(body: string | vscode.MarkdownString): string {
-  return typeof body === "string" ? body : body.value;
-}
-
-function anchorRange(document: vscode.TextDocument, line: number): vscode.Range {
-  const lineText = document.lineAt(line);
-  return new vscode.Range(line, 0, line, lineText.text.length);
-}
-
-async function setDescriptionInputActive(active: boolean) {
-  await vscode.commands.executeCommand("setContext", CONTEXT_ACTIVE, active);
-}
-
-function getActiveDraftText(): string {
-  if (!activeSession) {
-    return "";
-  }
-  const comment = activeSession.thread.comments[0];
-  if (!comment) {
-    return "";
-  }
-  return commentBodyText(comment.body);
-}
-
-function draftTextFromComment(comment?: MarkDescriptionComment): string {
-  if (comment && activeSession && comment.parent === activeSession.thread) {
-    return commentBodyText(comment.body);
-  }
-  return getActiveDraftText();
-}
-
-function draftTextFromReply(reply?: vscode.CommentReply): string {
-  if (!reply || !activeSession || reply.thread !== activeSession.thread) {
-    return "";
-  }
-  return reply.text;
-}
-
-function resolveDraftText(comment?: MarkDescriptionComment, reply?: vscode.CommentReply): string {
-  const fromReply = draftTextFromReply(reply).trim();
-  if (fromReply) {
-    return fromReply;
-  }
-  return draftTextFromComment(comment).trim();
-}
-
-function isDescriptionDirty(comment?: MarkDescriptionComment, reply?: vscode.CommentReply): boolean {
-  if (!activeSession) {
-    return false;
-  }
-  return resolveDraftText(comment, reply) !== activeSession.initialBody;
-}
-
-function getController(): vscode.CommentController {
-  if (!controller) {
-    controller = vscode.comments.createCommentController(CONTROLLER_ID, "AppSec Mark Description");
-    controller.commentingRangeProvider = {
-      provideCommentingRanges: (document) => {
-        const anchor = descriptionAnchor ?? activeSession?.anchor;
-        if (!anchor || anchor.uri.toString() !== document.uri.toString()) {
-          return [];
-        }
-        return [anchorRange(document, anchor.line)];
-      },
-    };
-    controller.options = {
-      prompt: "Mark description",
-      placeHolder: "Describe why this line is marked…",
-    };
-  }
-  return controller;
-}
-
-async function saveMarkDescriptionFromSession(
-  comment?: MarkDescriptionComment,
-  reply?: vscode.CommentReply,
-) {
-  if (!activeSession) {
-    return;
-  }
-  if (comment && comment.parent !== activeSession.thread) {
-    return;
-  }
-  if (reply && reply.thread !== activeSession.thread) {
-    return;
-  }
-  const text = resolveDraftText(comment, reply);
-  if (!text) {
-    void vscode.window.showWarningMessage("AppSec: enter a description before saving.");
-    return;
-  }
-  const session = activeSession;
-  await hideMarkDescriptionEditor();
-  await session.onSave(text);
-}
-
-async function cancelMarkDescriptionFromSession(
-  comment?: MarkDescriptionComment,
-  reply?: vscode.CommentReply,
-) {
-  if (!activeSession) {
-    return;
-  }
-  if (comment && comment.parent !== activeSession.thread) {
-    return;
-  }
-  if (reply && reply.thread !== activeSession.thread) {
-    return;
-  }
-  if (isDescriptionDirty(comment, reply)) {
-    const choice = await vscode.window.showWarningMessage(
-      "Отменить описание? Несохранённый текст будет потерян.",
-      { modal: true },
-      "Отменить",
-      "Продолжить ввод",
-    );
-    if (choice !== "Отменить") {
-      return;
-    }
-  }
-  const session = activeSession;
-  await hideMarkDescriptionEditor();
-  session.onCancel();
-}
-
-export function initializeMarkDescriptionController(context: vscode.ExtensionContext): void {
-  const commentController = getController();
-  context.subscriptions.push(commentController);
-
-  context.subscriptions.push(vscode.commands.registerCommand(
-    "appsecWorkbench.saveMarkDescription",
-    async (arg?: MarkDescriptionComment | vscode.CommentReply) => {
-      if (arg && "thread" in arg && "text" in arg) {
-        await saveMarkDescriptionFromSession(undefined, arg);
-        return;
-      }
-      await saveMarkDescriptionFromSession(arg as MarkDescriptionComment | undefined);
-    },
-  ));
-
-  context.subscriptions.push(vscode.commands.registerCommand(
-    "appsecWorkbench.cancelMarkDescription",
-    async (comment?: MarkDescriptionComment) => {
-      await cancelMarkDescriptionFromSession(comment);
-    },
-  ));
-}
-
-export async function hideMarkDescriptionEditor(): Promise<void> {
-  if (activeSession) {
-    activeSession.thread.dispose();
-  }
-  activeSession = null;
-  descriptionAnchor = null;
-  await setDescriptionInputActive(false);
-}
+let activeInputResolve: ((reason: "save" | "cancel") => void) | null = null;
 
 export function isMarkDescriptionEditorActive(): boolean {
-  return activeSession !== null || descriptionAnchor !== null;
+  return activeInputResolve !== null;
 }
 
-/** Intentionally no-op: dismiss only via Save/Cancel/explicit commands while typing. */
+/** Совместимость со старым API: явный сброс больше не нужен. */
+export async function hideMarkDescriptionEditor(): Promise<void> {
+  activeInputResolve = null;
+}
+
+/** Совместимость со старым API: input-box сам закрывается при смене фокуса. */
 export function hideMarkDescriptionEditorIfCursorMoved(): void {
+}
+
+export function initializeMarkDescriptionController(_context: vscode.ExtensionContext): void {
+  // Команды saveMarkDescription/cancelMarkDescription больше не нужны — input-box
+  // обрабатывает подтверждение и отмену самостоятельно. Оставляем no-op регистрацию,
+  // чтобы команды из package.json не приводили к ошибке "command not found".
+  _context.subscriptions.push(
+    vscode.commands.registerCommand("appsecWorkbench.saveMarkDescription", () => {}),
+    vscode.commands.registerCommand("appsecWorkbench.cancelMarkDescription", () => {}),
+  );
+}
+
+export function disposeMarkDescriptionEditor(): void {
+  activeInputResolve = null;
 }
 
 export function showMarkDescriptionEditor(
@@ -208,7 +43,10 @@ export function showMarkDescriptionEditor(
   onCancel: () => void,
 ): void {
   void (async () => {
-    await hideMarkDescriptionEditor();
+    if (activeInputResolve) {
+      activeInputResolve("cancel");
+      activeInputResolve = null;
+    }
 
     const position = new vscode.Position(line, 0);
     editor.selection = new vscode.Selection(position, position);
@@ -217,40 +55,40 @@ export function showMarkDescriptionEditor(
       vscode.TextEditorRevealType.InCenterIfOutsideViewport,
     );
 
-    const uri = editor.document.uri;
-    const range = anchorRange(editor.document, line);
-    descriptionAnchor = { uri, line };
-    await setDescriptionInputActive(true);
+    let resolved = false;
+    const completion = new Promise<"save" | "cancel">((resolve) => {
+      activeInputResolve = (reason) => {
+        if (resolved) return;
+        resolved = true;
+        resolve(reason);
+      };
+    });
+    void completion;
 
-    const thread = getController().createCommentThread(uri, range, []);
-    thread.collapsibleState = vscode.CommentThreadCollapsibleState.Expanded;
-    thread.canReply = false;
-    thread.contextValue = `mark-desc:${markId}`;
-    thread.label = "Mark description";
+    const value = await vscode.window.showInputBox({
+      prompt: `Описание для mark ${markId.slice(0, 8)}`,
+      placeHolder: "Опишите, почему отмечена эта строка",
+      value: initialValue,
+      ignoreFocusOut: true,
+    });
 
-    const comment = new MarkDescriptionComment(
-      initialValue,
-      vscode.CommentMode.Editing,
-      { name: "AppSec" },
-      thread,
-    );
-    thread.comments = [comment];
+    activeInputResolve = null;
 
-    activeSession = {
-      markId,
-      anchor: descriptionAnchor,
-      thread,
-      initialBody: initialValue.trim(),
-      onSave,
-      onCancel,
-    };
+    if (typeof value !== "string") {
+      onCancel();
+      return;
+    }
+    const trimmed = value.trim();
+    if (!trimmed) {
+      void vscode.window.showWarningMessage("AppSec: описание не может быть пустым.");
+      onCancel();
+      return;
+    }
+    try {
+      await onSave(trimmed);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      void vscode.window.showErrorMessage(`AppSec: не удалось сохранить описание: ${message}`);
+    }
   })();
-}
-
-export function disposeMarkDescriptionEditor(): void {
-  void hideMarkDescriptionEditor();
-  if (controller) {
-    controller.dispose();
-    controller = null;
-  }
 }

@@ -141,17 +141,23 @@ export function AssetsPage() {
               return;
             }
             const form = new FormData(event.currentTarget);
-            await api.createAsset(selectedAssessmentId, {
-              type: String(form.get("type") ?? "REPOSITORY"),
-              name: String(form.get("name") ?? ""),
-              locator: String(form.get("locator") ?? "") || null,
-              version_ref: String(form.get("version_ref") ?? "") || null,
-              metadata: {
-                repo: String(form.get("metadata_repo") ?? ""),
-                owner: String(form.get("metadata_owner") ?? ""),
-              },
-            });
-            (event.currentTarget as HTMLFormElement).reset();
+            const formEl = event.currentTarget as HTMLFormElement;
+            try {
+              await api.createAsset(selectedAssessmentId, {
+                type: String(form.get("type") ?? "REPOSITORY"),
+                name: String(form.get("name") ?? ""),
+                locator: String(form.get("locator") ?? "") || null,
+                version_ref: String(form.get("version_ref") ?? "") || null,
+                metadata: {
+                  repo: String(form.get("metadata_repo") ?? ""),
+                  owner: String(form.get("metadata_owner") ?? ""),
+                },
+              });
+            } catch (err) {
+              setError(err instanceof Error ? err.message : String(err));
+              return;
+            }
+            formEl.reset();
             await reload();
           }}
         >

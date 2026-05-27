@@ -2,6 +2,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, HTTPException
 
+from app.repositories.errors import DuplicateNameError
 from app.schemas.asset import AssetCreate, AssetRead, AssetUpdate
 from app.repositories.store_provider import get_store
 
@@ -12,7 +13,10 @@ router = APIRouter(tags=["assets"])
 def create_asset(assessment_id: UUID, payload: AssetCreate) -> AssetRead:
     if get_store().get_assessment(assessment_id) is None:
         raise HTTPException(status_code=404, detail="Assessment not found")
-    return get_store().create_asset(assessment_id, payload)
+    try:
+        return get_store().create_asset(assessment_id, payload)
+    except DuplicateNameError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @router.get("/api/assessments/{assessment_id}/assets", response_model=list[AssetRead])
@@ -30,7 +34,10 @@ def get_asset(asset_id: UUID) -> AssetRead:
 
 @router.patch("/api/assets/{asset_id}", response_model=AssetRead)
 def patch_asset(asset_id: UUID, payload: AssetUpdate) -> AssetRead:
-    asset = get_store().update_asset(asset_id, payload)
+    try:
+        asset = get_store().update_asset(asset_id, payload)
+    except DuplicateNameError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     if asset is None:
         raise HTTPException(status_code=404, detail="Asset not found")
     return asset

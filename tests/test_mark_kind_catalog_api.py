@@ -12,7 +12,12 @@ def client():
 
 
 def _mk_assessment(client: TestClient) -> str:
-    res = client.post("/api/assessments", json={"title": "Test assessment", "description": ""})
+    import uuid
+
+    res = client.post(
+        "/api/assessments",
+        json={"title": f"Test assessment {uuid.uuid4()}", "description": ""},
+    )
     assert res.status_code == 200, res.text
     return str(res.json()["id"])
 

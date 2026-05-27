@@ -1,7 +1,7 @@
 import { DragEvent, KeyboardEvent, MouseEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useWorkbench } from "@web/app/workbench";
-import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from "../../components/context-menu";
+import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSubmenu, ContextMenuTrigger } from "../../components/context-menu";
 import { EntityDeadEndBadge } from "../../components/EntityDeadEndBadge";
 import { EntityKindIcon } from "../../components/EntityKindIcon";
 import { ResourceCard } from "../../components/resource";
@@ -52,6 +52,10 @@ export type EmbedHostMutations = {
   }) => Promise<void>;
   patchRelationPropertiesBatch: (payload: {
     patches: Array<{ relationId: string; properties: Record<string, unknown> }>;
+  }) => Promise<void>;
+  changeMarkKind: (payload: {
+    markId: string;
+    kind: string;
   }) => Promise<void>;
 };
 
@@ -109,8 +113,11 @@ function rangeMatchesActive(
   const rangeFile = range.file.replace(/^\//, "");
   const activeFile = activeLocator.file.replace(/^\//, "");
   const rangeEnd = typeof range.end_line === "number" ? range.end_line : range.start_line;
+  // Точное совпадение диапазонов: hover в редакторе передаёт span конкретного mark/check,
+  // подсвечиваем только узлы с тем же диапазоном (а не любые пересекающиеся).
   return (activeFile.endsWith(rangeFile) || rangeFile.endsWith(activeFile))
-    && rangesOverlap(range.start_line, rangeEnd, activeLocator.startLine, activeLocator.endLine);
+    && range.start_line === activeLocator.startLine
+    && rangeEnd === activeLocator.endLine;
 }
 
 function nodeMatchesActiveRange(node: GraphNode, activeLocator: { file: string; startLine: number; endLine: number } | null | undefined) {
@@ -238,7 +245,7 @@ export function CaseLinkedEntitiesPanel({
   onSelectCheck,
   hostMutations,
 }: CaseLinkedEntitiesPanelProps) {
-  const { api, getProjectBasePathForAsset, getWorkspaceRoot } = useWorkbench();
+  const { api, getProjectBasePathForAsset, getWorkspaceRoot, markKindCatalog } = useWorkbench();
   const {
     selected,
     relations,
@@ -259,6 +266,7 @@ export function CaseLinkedEntitiesPanel({
   const [expandedSnippetIds, setExpandedSnippetIds] = useState<Set<string>>(new Set());
   const [focusedNodeKey, setFocusedNodeKey] = useState<string | null>(null);
   const [dropState, setDropState] = useState<RelationDropState | null>(null);
+  const [draggingEntityKey, setDraggingEntityKey] = useState<string | null>(null);
   const dropStateRef = useRef<RelationDropState | null>(null);
   const [relationDescriptionModal, setRelationDescriptionModal] = useState<RelationDescriptionModalState | null>(null);
   const [relationDisplayModal, setRelationDisplayModal] = useState<RelationDisplayModalState | null>(null);
@@ -283,6 +291,13 @@ export function CaseLinkedEntitiesPanel({
     await reload();
     onGraphMutated?.();
   };
+
+  const enabledMarkKinds = useMemo(
+    () => [...markKindCatalog]
+      .filter((entry) => entry.enabled)
+      .sort((a, b) => a.sort_order - b.sort_order || a.kind_key.localeCompare(b.kind_key)),
+    [markKindCatalog],
+  );
 
   const applySiblingReorder = useCallback(
     async (parent: GraphNode, draggedKey: string, targetKey: string, position: "before" | "after") => {
@@ -467,6 +482,7 @@ export function CaseLinkedEntitiesPanel({
     setExpandedSnippetIds(new Set());
     setFocusedNodeKey(null);
     setDropState(null);
+    setDraggingEntityKey(null);
     setRelationDescriptionModal(null);
     setRelationDisplayModal(null);
     panelKeyboardActiveRef.current = false;
@@ -484,7 +500,10 @@ export function CaseLinkedEntitiesPanel({
 
   /** Clear drop highlight when native drag ends (cancelled drops, etc.). */
   useEffect(() => {
-    const clear = () => setDropState(null);
+    const clear = () => {
+      setDropState(null);
+      setDraggingEntityKey(null);
+    };
     window.addEventListener("dragend", clear, true);
     return () => window.removeEventListener("dragend", clear, true);
   }, []);
@@ -674,6 +693,26 @@ export function CaseLinkedEntitiesPanel({
     }
   };
 
+  const changeMarkKind = async (node: GraphNode, kind: string) => {
+    if (node.entityType.toUpperCase() !== "MARK") {
+      return;
+    }
+    const normalized = kind.toUpperCase();
+    if (node.typeLabel.toUpperCase() === normalized) {
+      return;
+    }
+    try {
+      if (hostMutations) {
+        await hostMutations.changeMarkKind({ markId: node.entityId, kind: normalized });
+      } else {
+        await api.updateMark(node.entityId, { kind: normalized });
+      }
+      await notifyMutated();
+    } catch (error) {
+      reportError(mutationErrorMessage(error));
+    }
+  };
+
   const saveNodeDisplayName = async (current: RelationDisplayModalState) => {
     const relation = relations.find((item) => item.id === current.relationId);
     const properties = { ...((relation?.properties ?? {}) as Record<string, unknown>) };
@@ -702,12 +741,12 @@ export function CaseLinkedEntitiesPanel({
     const showTrailingTypeLabel = node.relationLabel !== "PART_OF";
     const isCheckNode = node.entityType.toUpperCase() === "CHECK";
     const description = String(node.userDescription ?? "").trim();
-    const showInlineDescription = Boolean(description);
     const canDelete = Boolean(node.relationId);
     const canToggleDeadEnd = collectMarkIdsInSubtree(node).length > 0;
     const showDeadEndBadge = Boolean(node.isDeadEnd || node.isDeadEndInherited);
     const canCreateCheck = !["CASE", "CHECK"].includes(node.entityType.toUpperCase());
     const canEditDescription = Boolean(node.relationId);
+    const canChangeMarkKind = node.entityType.toUpperCase() === "MARK" && enabledMarkKinds.length > 0;
     const showNavLinks = variant !== "embed";
     const isCurrentEditorEntity = nodeMatchesActiveRange(node, activeLocator);
     const isKeyboardFocused = focusedNodeKey === nodeKey;
@@ -803,9 +842,14 @@ export function CaseLinkedEntitiesPanel({
     const primaryInteractive = primaryIsNavigable || primaryIsSnippetToggle;
     const pillInteractive = pillIsNavigable || pillIsSnippetToggle;
 
+    const isDropOnThisLine = dropState?.targetKey === nodeKey;
+    const isDropInsideTarget = Boolean(isDropOnThisLine && dropState?.position === "inside");
+    const isDropInsertBefore = Boolean(isDropOnThisLine && dropState?.position === "before");
+    const isDropInsertAfter = Boolean(isDropOnThisLine && dropState?.position === "after");
+
     return (
       <div
-        className={`relation-tree-line ${depth ? "has-parent" : ""}`}
+        className={`relation-tree-line ${depth ? "has-parent" : ""} ${isDropInsertBefore ? "is-drop-insert-before" : ""} ${isDropInsertAfter ? "is-drop-insert-after" : ""}`}
         onDragOver={(event) => {
           event.preventDefault();
           event.stopPropagation();
@@ -815,12 +859,19 @@ export function CaseLinkedEntitiesPanel({
           const h = rect.height || 1;
           let position: RelationDropState["position"] = "inside";
           if (node.entityType.toUpperCase() !== "CASE") {
-            if (y < h / 3) {
-              position = "before";
-            } else if (y > (2 * h) / 3) {
-              position = "after";
-            } else {
-              position = "inside";
+            const sameParentReorder = Boolean(
+              relationTree
+              && draggingEntityKey
+              && findGraphParent(relationTree, draggingEntityKey) === findGraphParent(relationTree, nodeKey),
+            );
+            if (sameParentReorder) {
+              if (y < h / 3) {
+                position = "before";
+              } else if (y > (2 * h) / 3) {
+                position = "after";
+              } else {
+                position = "inside";
+              }
             }
           }
           setDropState({ targetKey: nodeKey, position });
@@ -838,6 +889,7 @@ export function CaseLinkedEntitiesPanel({
           event.stopPropagation();
           const ds = dropStateRef.current;
           setDropState(null);
+          setDraggingEntityKey(null);
           const raw = readEntityDragData(event.dataTransfer);
           if (!raw) {
             return;
@@ -871,7 +923,7 @@ export function CaseLinkedEntitiesPanel({
         <ContextMenu>
           <ContextMenuTrigger>
             <div
-              className={`relation-tree-hit ${dropState?.targetKey === nodeKey ? "is-drop-target" : ""} ${isCurrentEditorEntity ? "is-current-editor-entity" : ""} ${isKeyboardFocused ? "is-keyboard-focused" : ""}`}
+              className={`relation-tree-hit ${isDropInsideTarget ? "is-drop-target" : ""} ${isCurrentEditorEntity ? "is-current-editor-entity" : ""} ${isKeyboardFocused ? "is-keyboard-focused" : ""}`}
               data-node-key={nodeKey}
             >
               {node.entityType !== "CASE" ? (
@@ -881,10 +933,12 @@ export function CaseLinkedEntitiesPanel({
                   title="Drag to reorder or reparent"
                   aria-label="Drag to reorder or reparent"
                   onDragStart={(event) => {
+                    setDraggingEntityKey(`${node.entityType}:${node.entityId}`);
                     setEntityDragData(event.dataTransfer, node.entityType, node.entityId);
                   }}
                   onDragEnd={() => {
                     setDropState(null);
+                    setDraggingEntityKey(null);
                   }}
                 >
                   ⋮⋮
@@ -949,11 +1003,23 @@ export function CaseLinkedEntitiesPanel({
                 <EntityNavLink key={linkedCase.id} type="CASE" id={linkedCase.id} label={linkedCase.label} />
               )) : null}
               {showNavLinks ? <EntityNavLink type={node.entityType} id={node.entityId} label="↗" /> : null}
-              {showInlineDescription ? <span className="case-tree-description">{description}</span> : null}
             </div>
           </ContextMenuTrigger>
-          {(canDelete || canCreateCheck || canEditDescription || canToggleDeadEnd) ? (
+          {(canDelete || canCreateCheck || canEditDescription || canToggleDeadEnd || canChangeMarkKind) ? (
             <ContextMenuContent>
+              {canChangeMarkKind ? (
+                <ContextMenuSubmenu label="Change type">
+                  {enabledMarkKinds.map((entry) => (
+                    <ContextMenuItem
+                      key={entry.kind_key}
+                      active={node.typeLabel.toUpperCase() === entry.kind_key.toUpperCase()}
+                      onSelect={() => void changeMarkKind(node, entry.kind_key)}
+                    >
+                      {entry.display_label}
+                    </ContextMenuItem>
+                  ))}
+                </ContextMenuSubmenu>
+              ) : null}
               {canToggleDeadEnd ? (
                 <ContextMenuItem onSelect={() => void toggleDeadEnd(node)}>
                   {(node.isDeadEnd || node.isDeadEndInherited) ? "Remove dead-end mark" : "Mark as dead end"}
@@ -983,24 +1049,29 @@ export function CaseLinkedEntitiesPanel({
     const isSnippetExpanded = expandedSnippetIds.has(nodeKey);
     const isEditingDescription = relationDescriptionModal?.nodeKey === nodeKey;
     const isEditingDisplay = relationDisplayModal?.nodeKey === nodeKey;
-    if ((!hasSnippet || !isSnippetExpanded) && !isEditingDescription && !isEditingDisplay) {
+    const nodeDescription = String(node.userDescription ?? "").trim();
+    const hasDescription = Boolean(nodeDescription);
+    if ((!hasSnippet || !isSnippetExpanded) && !isEditingDescription && !isEditingDisplay && !hasDescription) {
       return null;
     }
     return (
       <div className={`case-tree-detail-grid ${variant === "embed" ? "case-tree-detail-grid-embed" : ""}`}>
         <div className="case-tree-snippet">
           {hasSnippet && isSnippetExpanded ? (
-            <>
-              <div className="small">
-                Context lines {String(node.snippet?.startLine ?? "—")}..{String(node.snippet?.endLine ?? "—")}
-              </div>
-              <HighlightedSnippet
-                snippet={node.snippet?.snippet}
-                selectedText={node.snippet?.selectedText}
-                highlightStartOffset={node.snippet?.highlightStartOffset}
-                highlightEndOffset={node.snippet?.highlightEndOffset}
-              />
-            </>
+            <div className="small">
+              Context lines {String(node.snippet?.startLine ?? "—")}..{String(node.snippet?.endLine ?? "—")}
+            </div>
+          ) : null}
+          {hasDescription && !isEditingDescription ? (
+            <div className="case-tree-description-block">{nodeDescription}</div>
+          ) : null}
+          {hasSnippet && isSnippetExpanded ? (
+            <HighlightedSnippet
+              snippet={node.snippet?.snippet}
+              selectedText={node.snippet?.selectedText}
+              highlightStartOffset={node.snippet?.highlightStartOffset}
+              highlightEndOffset={node.snippet?.highlightEndOffset}
+            />
           ) : null}
         </div>
         {isEditingDescription ? (

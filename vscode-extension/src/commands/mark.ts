@@ -605,7 +605,7 @@ async function createMark(kind: string, provider: SelectionActionCodeLensProvide
   };
   const mark = await api.createMark(kind, {
     title,
-    note: markContext.contextSnippet,
+    note: "",
     object_id: object?.id,
     object_payload: objectPayload,
   });
@@ -847,11 +847,18 @@ async function createCaseFromContext(provider: SelectionActionCodeLensProvider, 
   }
 
   const api = new WorkbenchApiClient(readState());
-  const createdCase = await api.createCase({
-    title,
-    description: `Created from ${target.locator}`,
-    confidence: "MEDIUM",
-  });
+  let createdCase;
+  try {
+    createdCase = await api.createCase({
+      title,
+      description: `Created from ${target.locator}`,
+      confidence: "MEDIUM",
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    vscode.window.showErrorMessage(`AppSec: не удалось создать case: ${message}`);
+    return;
+  }
 
   const marksToAttach = [mark, recentOpposite].filter((item): item is ReviewEntity => Boolean(item));
   for (const entry of marksToAttach) {
@@ -872,11 +879,18 @@ async function createCaseWithRecent(provider: SelectionActionCodeLensProvider, t
   const api = new WorkbenchApiClient(readState());
   const source = mark.kind === "SOURCE" ? mark : recent;
   const sink = mark.kind === "SINK" ? mark : recent;
-  const createdCase = await api.createCase({
-    title: `Possible ${entityLabel(source)} -> ${entityLabel(sink)}`,
-    description: `Created from ${target.locator}`,
-    confidence: "MEDIUM",
-  });
+  let createdCase;
+  try {
+    createdCase = await api.createCase({
+      title: `Possible ${entityLabel(source)} -> ${entityLabel(sink)}`,
+      description: `Created from ${target.locator}`,
+      confidence: "MEDIUM",
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    vscode.window.showErrorMessage(`AppSec: не удалось создать case: ${message}`);
+    return;
+  }
   for (const entry of [mark, recent]) {
     await api.createRelation({
       subject_type: "MARK",

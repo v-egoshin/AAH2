@@ -7,6 +7,7 @@ export type HostMutationAction =
   | "deleteRelation"
   | "createCheckFromNode"
   | "toggleDeadEnd"
+  | "changeMarkKind"
   | "deleteCase"
   | "patchRelationPropertiesBatch";
 

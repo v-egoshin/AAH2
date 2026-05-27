@@ -43,6 +43,10 @@ vi.mock("../app/workbench", () => ({
     selectedAssetId: "asset-1",
     getProjectBasePathForAsset: () => "",
     getWorkspaceRoot: () => "",
+    markKindCatalog: [
+      { id: "1", kind_key: "SOURCE", display_label: "Source", enabled: true, sort_order: 10, color: "#15803d", is_builtin: true },
+      { id: "2", kind_key: "SINK", display_label: "Sink", enabled: true, sort_order: 20, color: "#b91c1c", is_builtin: true },
+    ],
   }),
 }));
 
@@ -168,7 +172,7 @@ describe("CasesPage", () => {
     await flushAsyncWork();
     await waitForGraphLoaded(view.container);
 
-    const description = [...view.container.querySelectorAll(".case-tree-description")]
+    const description = [...view.container.querySelectorAll(".case-tree-description-block")]
       .find((node) => node.textContent?.includes("Manual description"));
     expect(description).not.toBeUndefined();
     expect(view.container.textContent?.match(/Generated Check/g)?.length ?? 0).toBe(1);

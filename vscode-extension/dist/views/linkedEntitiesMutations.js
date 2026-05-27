@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.movePartOfRelation = movePartOfRelation;
 exports.updateRelationDescription = updateRelationDescription;
 exports.toggleMarksDeadEnd = toggleMarksDeadEnd;
+exports.changeMarkKind = changeMarkKind;
 exports.createCheckFromNode = createCheckFromNode;
 async function movePartOfRelation(client, relations, subjectType, subjectId, objectType, objectId) {
     if (subjectType === objectType && subjectId === objectId) {
@@ -46,6 +47,9 @@ async function updateRelationDescription(client, relationId, entityType, entityI
 }
 async function toggleMarksDeadEnd(client, markIds, isDeadEnd) {
     await Promise.all(markIds.map((markId) => client.updateMark(markId, { is_dead_end: isDeadEnd })));
+}
+async function changeMarkKind(client, markId, kind) {
+    await client.updateMark(markId, { kind });
 }
 async function createCheckFromNode(client, caseId, entityType, entityId, label, userDescription) {
     const created = await client.createCheck({

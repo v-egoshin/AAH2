@@ -36,7 +36,10 @@ def get_mark(mark_id: UUID):
 
 @router.patch("/api/marks/{mark_id}")
 def patch_mark(mark_id: UUID, payload: MarkUpdate):
-    record = get_store().update_mark(mark_id, payload)
+    try:
+        record = get_store().update_mark(mark_id, payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     if record is None:
         raise HTTPException(status_code=404, detail="Mark not found")
     return record

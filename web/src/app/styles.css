@@ -800,6 +800,25 @@ a { color: inherit; }
   min-height: 20px;
   position: relative;
 }
+/* sibling reorder: insertion line between rows (before/after) */
+.relation-tree-line.is-drop-insert-before::after,
+.relation-tree-line.is-drop-insert-after::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: var(--primary);
+  border-radius: 2px;
+  pointer-events: none;
+  z-index: 2;
+}
+.relation-tree-line.is-drop-insert-before::after {
+  top: -2px;
+}
+.relation-tree-line.is-drop-insert-after::after {
+  bottom: -2px;
+}
 .relation-tree-hit {
   display: flex;
   align-items: center;
@@ -955,6 +974,14 @@ a { color: inherit; }
   line-height: 1.45;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+.case-tree-description-block {
+  color: #435269;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+  padding: 2px 0;
 }
 .tree-linked-cases {
   color: #69778b;

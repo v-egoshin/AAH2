@@ -78,6 +78,14 @@ export async function toggleMarksDeadEnd(
   await Promise.all(markIds.map((markId) => client.updateMark(markId, { is_dead_end: isDeadEnd })));
 }
 
+export async function changeMarkKind(
+  client: WorkbenchApiClient,
+  markId: string,
+  kind: string,
+) {
+  await client.updateMark(markId, { kind });
+}
+
 export async function createCheckFromNode(
   client: WorkbenchApiClient,
   caseId: string,

@@ -286,11 +286,16 @@ export function CasesPage() {
                 setError("Select asset first");
                 return;
               }
-              await api.createCase(selectedAssessmentId, {
-                title: createDraft.title,
-                asset_id: selectedAssetId,
-                description: createDraft.description,
-              });
+              try {
+                await api.createCase(selectedAssessmentId, {
+                  title: createDraft.title,
+                  asset_id: selectedAssetId,
+                  description: createDraft.description,
+                });
+              } catch (err) {
+                setError(err instanceof Error ? err.message : String(err));
+                return;
+              }
               setIsCreateOpen(false);
               await reload();
             }}

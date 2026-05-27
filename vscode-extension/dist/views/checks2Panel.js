@@ -462,7 +462,10 @@ class Checks2Panel {
         }
     }
     postError(error) {
-        this.view?.webview.postMessage({ type: "error", error: error instanceof Error ? error.message : String(error) });
+        const message = error instanceof Error ? error.message : String(error);
+        this.view?.webview.postMessage({ type: "error", error: message });
+        // Дополнительно показываем нативный toast, иначе на закрытых формах ошибка остаётся незамеченной.
+        void vscode.window.showErrorMessage(`AppSec: ${message}`);
     }
     async pushData() {
         if (!this.view)

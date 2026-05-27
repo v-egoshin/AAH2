@@ -21,10 +21,14 @@ export function registerAssessmentCommands(context: vscode.ExtensionContext) {
       }
 
       const description = (await vscode.window.showInputBox({ prompt: "Assessment description", value: "" })) ?? "";
-      const created = await api.createAssessment({ title: trimmedTitle, description });
-      await updateAssessmentState({ assessmentId: created.id });
-
-      vscode.window.showInformationMessage(`AppSec: assessment created: ${created.title} (${created.id})`);
+      try {
+        const created = await api.createAssessment({ title: trimmedTitle, description });
+        await updateAssessmentState({ assessmentId: created.id });
+        vscode.window.showInformationMessage(`AppSec: assessment created: ${created.title} (${created.id})`);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        vscode.window.showErrorMessage(`AppSec: не удалось создать assessment: ${message}`);
+      }
     })
   );
 }

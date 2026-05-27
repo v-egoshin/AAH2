@@ -17,6 +17,7 @@ from app.db.models import (
 )
 from app.db.session import get_session
 from app.models.enums import CandidateStatus, CandidateType, CheckStatus
+from app.repositories.errors import DuplicateNameError
 from app.schemas.asset import AssetCreate, AssetRead, AssetUpdate
 from app.schemas.assessment import AssessmentCreate, AssessmentRead, AssessmentUpdate
 from app.schemas.case_finding import CaseCreate, CaseRead, CaseUpdate, FindingCreate, FindingRead, FindingUpdate
@@ -329,8 +330,12 @@ class SqlStore:
         )
 
     def create_assessment(self, payload: AssessmentCreate) -> AssessmentRead:
+        title = (payload.title or "").strip()
         with get_session() as db:
-            record = AssessmentORM(title=payload.title, description=payload.description)
+            existing = db.query(AssessmentORM).filter(AssessmentORM.title == title).first()
+            if existing is not None:
+                raise DuplicateNameError("Assessment", title)
+            record = AssessmentORM(title=title, description=payload.description)
             db.add(record)
             db.commit()
             db.refresh(record)
@@ -350,7 +355,19 @@ class SqlStore:
             record = db.get(AssessmentORM, str(assessment_id))
             if record is None:
                 return None
-            for key, value in payload.model_dump(exclude_unset=True).items():
+            changes = payload.model_dump(exclude_unset=True)
+            new_title = changes.get("title")
+            if new_title is not None:
+                new_title = new_title.strip()
+                clash = (
+                    db.query(AssessmentORM)
+                    .filter(AssessmentORM.title == new_title, AssessmentORM.id != record.id)
+                    .first()
+                )
+                if clash is not None:
+                    raise DuplicateNameError("Assessment", new_title)
+                changes["title"] = new_title
+            for key, value in changes.items():
                 setattr(record, "metadata_json" if key == "metadata" else key, value)
             db.commit()
             db.refresh(record)
@@ -377,11 +394,19 @@ class SqlStore:
             return True
 
     def create_asset(self, assessment_id: UUID, payload: AssetCreate) -> AssetRead:
+        name = (payload.name or "").strip()
         with get_session() as db:
+            existing = (
+                db.query(AssetORM)
+                .filter(AssetORM.assessment_id == str(assessment_id), AssetORM.name == name)
+                .first()
+            )
+            if existing is not None:
+                raise DuplicateNameError("Asset", name, scope=f"assessment {assessment_id}")
             record = AssetORM(
                 assessment_id=str(assessment_id),
                 type=payload.type,
-                name=payload.name,
+                name=name,
                 locator=payload.locator,
                 version_ref=payload.version_ref,
                 metadata_json=payload.metadata,
@@ -406,7 +431,23 @@ class SqlStore:
             record = db.get(AssetORM, str(asset_id))
             if record is None:
                 return None
-            for key, value in payload.model_dump(exclude_unset=True).items():
+            changes = payload.model_dump(exclude_unset=True)
+            new_name = changes.get("name")
+            if new_name is not None:
+                new_name = new_name.strip()
+                clash = (
+                    db.query(AssetORM)
+                    .filter(
+                        AssetORM.assessment_id == record.assessment_id,
+                        AssetORM.name == new_name,
+                        AssetORM.id != record.id,
+                    )
+                    .first()
+                )
+                if clash is not None:
+                    raise DuplicateNameError("Asset", new_name, scope=f"assessment {record.assessment_id}")
+                changes["name"] = new_name
+            for key, value in changes.items():
                 setattr(record, "metadata_json" if key == "metadata" else key, value)
             db.commit()
             db.refresh(record)
@@ -624,7 +665,11 @@ class SqlStore:
             record = db.get(MarkORM, str(mark_id))
             if record is None:
                 return None
-            for key, value in payload.model_dump(exclude_unset=True).items():
+            updates = payload.model_dump(exclude_unset=True)
+            if "kind" in updates:
+                self._seed_mark_kind_catalog_if_empty(db, record.assessment_id)
+                self._assert_mark_kind_enabled(db, record.assessment_id, updates["kind"])
+            for key, value in updates.items():
                 setattr(record, key, value)
             db.commit()
             db.refresh(record)
@@ -722,6 +767,15 @@ class SqlStore:
         with get_session() as db:
             values = payload.model_dump()
             values["asset_id"] = str(values["asset_id"])
+            title = (values.get("title") or "").strip()
+            values["title"] = title
+            existing = (
+                db.query(CaseORM)
+                .filter(CaseORM.assessment_id == str(assessment_id), CaseORM.title == title)
+                .first()
+            )
+            if existing is not None:
+                raise DuplicateNameError("Case", title, scope=f"assessment {assessment_id}")
             record = CaseORM(assessment_id=str(assessment_id), **values)
             db.add(record)
             db.commit()
@@ -748,7 +802,23 @@ class SqlStore:
             record = db.get(CaseORM, str(case_id))
             if record is None:
                 return None
-            for key, value in payload.model_dump(exclude_unset=True).items():
+            changes = payload.model_dump(exclude_unset=True)
+            new_title = changes.get("title")
+            if new_title is not None:
+                new_title = new_title.strip()
+                clash = (
+                    db.query(CaseORM)
+                    .filter(
+                        CaseORM.assessment_id == record.assessment_id,
+                        CaseORM.title == new_title,
+                        CaseORM.id != record.id,
+                    )
+                    .first()
+                )
+                if clash is not None:
+                    raise DuplicateNameError("Case", new_title, scope=f"assessment {record.assessment_id}")
+                changes["title"] = new_title
+            for key, value in changes.items():
                 setattr(record, key, str(value) if key == "asset_id" and value is not None else value)
             db.commit()
             db.refresh(record)

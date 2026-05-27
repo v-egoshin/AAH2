@@ -44,6 +44,27 @@ export function enabledMarkKindsSorted(): MarkKindCatalogRow[] {
     .sort((a, b) => a.sort_order - b.sort_order || a.kind_key.localeCompare(b.kind_key));
 }
 
+/** Letter shown inside gutter rail caps for builtin structural kinds */
+export function glyphForStructuredKind(kindKey: string): string | null {
+  const key = kindKey.toUpperCase();
+  switch (key) {
+    case "SOURCE":
+      return "S";
+    case "SINK":
+      return "K";
+    case "GUARD":
+      return "G";
+    case "TRANSFORM":
+      return "T";
+    case "CHECK":
+      return "C";
+    case "NOTE":
+      return null;
+    default:
+      return null;
+  }
+}
+
 /** Filenames under `media/` for structural kinds only; NOTE/custom kinds use tinted gutter dot */
 export function gutterIconFileForStructuredKind(kindKey: string): string | null {
   const key = kindKey.toUpperCase();

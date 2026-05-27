@@ -17,4 +17,5 @@ export const embedHostMutations: EmbedHostMutations = {
   toggleDeadEnd: (payload) => requestHostMutation("toggleDeadEnd", payload),
   patchRelationPropertiesBatch: (payload) =>
     requestHostMutation("patchRelationPropertiesBatch", { patches: payload.patches } as Record<string, unknown>),
+  changeMarkKind: (payload) => requestHostMutation("changeMarkKind", payload),
 };

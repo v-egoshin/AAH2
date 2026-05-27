@@ -3,6 +3,7 @@ import re
 from uuid import UUID
 
 from app.models.enums import CandidateStatus, CandidateType, CheckStatus, SourceType
+from app.repositories.errors import DuplicateNameError
 from app.schemas.asset import AssetCreate, AssetRead, AssetUpdate
 from app.schemas.assessment import AssessmentCreate, AssessmentRead, AssessmentUpdate
 from app.schemas.case_finding import CaseCreate, CaseRead, CaseUpdate, FindingCreate, FindingRead, FindingUpdate
@@ -52,7 +53,10 @@ class InMemoryStore:
         self.evidence: dict[UUID, EvidenceRead] = {}
 
     def create_assessment(self, payload: AssessmentCreate) -> AssessmentRead:
-        record = AssessmentRead(title=payload.title, description=payload.description)
+        title = (payload.title or "").strip()
+        if any(item.title == title for item in self.assessments.values()):
+            raise DuplicateNameError("Assessment", title)
+        record = AssessmentRead(title=title, description=payload.description)
         self.assessments[record.id] = record
         return record
 
@@ -66,7 +70,15 @@ class InMemoryStore:
         record = self.assessments.get(assessment_id)
         if not record:
             return None
-        return _apply_patch(record, payload.model_dump(exclude_unset=True))
+        changes = payload.model_dump(exclude_unset=True)
+        new_title = changes.get("title")
+        if new_title is not None:
+            new_title = new_title.strip()
+            for other_id, other in self.assessments.items():
+                if other_id != assessment_id and other.title == new_title:
+                    raise DuplicateNameError("Assessment", new_title)
+            changes["title"] = new_title
+        return _apply_patch(record, changes)
 
     def delete_assessment(self, assessment_id: UUID) -> bool:
         if assessment_id not in self.assessments:
@@ -85,7 +97,13 @@ class InMemoryStore:
         return True
 
     def create_asset(self, assessment_id: UUID, payload: AssetCreate) -> AssetRead:
-        record = AssetRead(assessment_id=assessment_id, **payload.model_dump())
+        name = (payload.name or "").strip()
+        for item in self.assets.values():
+            if item.assessment_id == assessment_id and item.name == name:
+                raise DuplicateNameError("Asset", name, scope=f"assessment {assessment_id}")
+        values = payload.model_dump()
+        values["name"] = name
+        record = AssetRead(assessment_id=assessment_id, **values)
         self.assets[record.id] = record
         return record
 
@@ -99,7 +117,15 @@ class InMemoryStore:
         record = self.assets.get(asset_id)
         if not record:
             return None
-        return _apply_patch(record, payload.model_dump(exclude_unset=True))
+        changes = payload.model_dump(exclude_unset=True)
+        new_name = changes.get("name")
+        if new_name is not None:
+            new_name = new_name.strip()
+            for other_id, other in self.assets.items():
+                if other_id != asset_id and other.assessment_id == record.assessment_id and other.name == new_name:
+                    raise DuplicateNameError("Asset", new_name, scope=f"assessment {record.assessment_id}")
+            changes["name"] = new_name
+        return _apply_patch(record, changes)
 
     def delete_asset(self, asset_id: UUID) -> bool:
         if asset_id not in self.assets:
@@ -305,7 +331,13 @@ class InMemoryStore:
         return True
 
     def create_case(self, assessment_id: UUID, payload: CaseCreate) -> CaseRead:
-        record = CaseRead(assessment_id=assessment_id, **payload.model_dump())
+        title = (payload.title or "").strip()
+        for item in self.cases.values():
+            if item.assessment_id == assessment_id and item.title == title:
+                raise DuplicateNameError("Case", title, scope=f"assessment {assessment_id}")
+        values = payload.model_dump()
+        values["title"] = title
+        record = CaseRead(assessment_id=assessment_id, **values)
         self.cases[record.id] = record
         return record
 
@@ -322,7 +354,15 @@ class InMemoryStore:
         record = self.cases.get(case_id)
         if not record:
             return None
-        return _apply_patch(record, payload.model_dump(exclude_unset=True))
+        changes = payload.model_dump(exclude_unset=True)
+        new_title = changes.get("title")
+        if new_title is not None:
+            new_title = new_title.strip()
+            for other_id, other in self.cases.items():
+                if other_id != case_id and other.assessment_id == record.assessment_id and other.title == new_title:
+                    raise DuplicateNameError("Case", new_title, scope=f"assessment {record.assessment_id}")
+            changes["title"] = new_title
+        return _apply_patch(record, changes)
 
     def delete_case(self, case_id: UUID) -> bool:
         if case_id not in self.cases:

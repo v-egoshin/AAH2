@@ -2,6 +2,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, HTTPException
 
+from app.repositories.errors import DuplicateNameError
 from app.repositories.store_provider import get_store
 from app.schemas.case_finding import CaseCreate, CaseUpdate
 
@@ -16,7 +17,10 @@ def create_case(assessment_id: UUID, payload: CaseCreate):
     asset = store.get_asset(payload.asset_id)
     if asset is None or asset.assessment_id != assessment_id:
         raise HTTPException(status_code=404, detail="Asset not found")
-    return store.create_case(assessment_id, payload)
+    try:
+        return store.create_case(assessment_id, payload)
+    except DuplicateNameError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @router.get("/api/assessments/{assessment_id}/cases")
@@ -38,7 +42,10 @@ def patch_case(case_id: UUID, payload: CaseUpdate):
         asset = get_store().get_asset(payload.asset_id)
         if asset is None:
             raise HTTPException(status_code=404, detail="Asset not found")
-    record = get_store().update_case(case_id, payload)
+    try:
+        record = get_store().update_case(case_id, payload)
+    except DuplicateNameError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     if record is None:
         raise HTTPException(status_code=404, detail="Case not found")
     return record

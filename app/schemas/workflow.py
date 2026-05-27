@@ -64,6 +64,17 @@ class MarkUpdate(BaseModel):
     note: str | None = None
     status: MarkStatus | None = None
     is_dead_end: bool | None = None
+    kind: str | None = None
+
+    @field_validator("kind")
+    @classmethod
+    def normalize_mark_kind(cls, value: str) -> str:
+        key = value.strip().upper()
+        if len(key) > 64:
+            raise ValueError("mark kind too long")
+        if not _KIND_RE.match(key):
+            raise ValueError("mark kind must match [A-Z][A-Z0-9_]*")
+        return key
 
 
 class CheckCreate(BaseModel):

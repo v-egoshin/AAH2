@@ -165,6 +165,25 @@ body.appsec-linked-entities-webview .relation-tree-hit.is-drop-target {
   outline: 1px solid var(--vscode-focusBorder);
 }
 
+body.appsec-linked-entities-webview .relation-tree-line.is-drop-insert-before::after,
+body.appsec-linked-entities-webview .relation-tree-line.is-drop-insert-after::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: var(--vscode-focusBorder);
+  border-radius: 2px;
+  pointer-events: none;
+  z-index: 2;
+}
+body.appsec-linked-entities-webview .relation-tree-line.is-drop-insert-before::after {
+  top: -2px;
+}
+body.appsec-linked-entities-webview .relation-tree-line.is-drop-insert-after::after {
+  bottom: -2px;
+}
+
 body.appsec-linked-entities-webview .relation-tree-hit.is-current-editor-entity {
   background: var(--vscode-editor-lineHighlightBackground, var(--vscode-list-hoverBackground));
   outline: 1px solid var(--vscode-focusBorder);
@@ -308,6 +327,13 @@ body.appsec-linked-entities-webview .context-menu-separator {
 body.appsec-linked-entities-webview .context-menu-item-icon,
 body.appsec-linked-entities-webview .context-submenu-caret {
   color: var(--vscode-descriptionForeground);
+}
+
+body.appsec-linked-entities-webview .context-submenu-panel {
+  background: var(--vscode-menu-background);
+  border-color: var(--vscode-menu-border, var(--vscode-widget-border));
+  color: var(--vscode-menu-foreground);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.36);
 }
 
 .case-linked-entities-embed {

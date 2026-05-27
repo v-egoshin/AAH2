@@ -3,7 +3,7 @@ import * as vscode from "vscode";
 import { AssetRecord, WorkbenchApiClient } from "../api/client";
 import { getActiveCase, setActiveCase } from "../state/activeCase";
 import { readState } from "../state/assessmentState";
-import { getMarkKindAccentByKindMap } from "../state/markKindCatalog";
+import { getMarkKindAccentByKindMap, enabledMarkKindsSorted } from "../state/markKindCatalog";
 import { loadCaseGraphData, type CaseGraphDataBundle } from "./linkedEntitiesGraphData";
 import {
   getRepositoryRoot,
@@ -12,6 +12,7 @@ import {
 } from "../lib/assetPath";
 import {
   createCheckFromNode,
+  changeMarkKind,
   movePartOfRelation,
   toggleMarksDeadEnd,
   updateRelationDescription,
@@ -293,6 +294,13 @@ export class LinkedEntitiesPanel implements vscode.WebviewViewProvider {
     });
   }
 
+  setHoveredLocator(locator: { file: string; startLine: number; endLine: number } | null) {
+    this.view?.webview.postMessage({
+      type: "activeLocator",
+      activeLocator: locator,
+    });
+  }
+
   private postMutateResult(webview: vscode.Webview, requestId: string, ok: boolean, error?: string) {
     webview.postMessage({
       type: "mutateResult",
@@ -378,6 +386,15 @@ export class LinkedEntitiesPanel implements vscode.WebviewViewProvider {
             throw new Error("Invalid toggleDeadEnd payload");
           }
           await toggleMarksDeadEnd(client, markIds, isDeadEnd);
+          break;
+        }
+        case "changeMarkKind": {
+          const markId = String(payload.markId ?? "");
+          const kind = String(payload.kind ?? "");
+          if (!markId || !kind) {
+            throw new Error("Invalid changeMarkKind payload");
+          }
+          await changeMarkKind(client, markId, kind);
           break;
         }
         case "patchRelationPropertiesBatch": {
@@ -467,6 +484,7 @@ export class LinkedEntitiesPanel implements vscode.WebviewViewProvider {
       graphData: undefined as CaseGraphDataBundle | undefined,
       graphError: undefined as string | undefined,
       markKindAccentByKind: undefined as Record<string, string> | undefined,
+      markKindCatalogEntries: undefined as ReturnType<typeof enabledMarkKindsSorted> | undefined,
     };
     const client = this.createApiClient(state);
     try {
@@ -493,10 +511,10 @@ export class LinkedEntitiesPanel implements vscode.WebviewViewProvider {
         setActiveCase(null);
       }
       const nextCaseId = scopedActiveCase?.id ?? null;
-      let locatorForEmbed = activeEditorLocator();
-      if (this.linkedEntitiesPreviousCaseId !== undefined && this.linkedEntitiesPreviousCaseId !== nextCaseId) {
-        locatorForEmbed = null;
-      }
+      // Подсветка узлов в Linked Entities привязана к hover в редакторе, а не к selection.
+      // При refresh/смене кейса не выставляем locator — иначе после создания mark выделение в редакторе
+      // совпадало бы с новым mark и панель оставляла бы на нём рамку.
+      const locatorForEmbed: ReturnType<typeof activeEditorLocator> = null;
       this.linkedEntitiesPreviousCaseId = nextCaseId;
       return {
         ...base,
@@ -510,6 +528,15 @@ export class LinkedEntitiesPanel implements vscode.WebviewViewProvider {
         projectBasePaths,
         graphError: graph.graphError,
         markKindAccentByKind: getMarkKindAccentByKindMap(),
+        markKindCatalogEntries: enabledMarkKindsSorted().map((entry) => ({
+          id: entry.id ?? entry.kind_key,
+          kind_key: entry.kind_key,
+          display_label: entry.display_label,
+          enabled: entry.enabled,
+          sort_order: entry.sort_order,
+          color: entry.color,
+          is_builtin: entry.is_builtin,
+        })),
         activeLocator: locatorForEmbed,
         configVersion: ++this.configVersion,
       };
