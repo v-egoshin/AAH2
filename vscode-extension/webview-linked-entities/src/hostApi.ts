@@ -9,6 +9,7 @@ export type HostMutationAction =
   | "toggleDeadEnd"
   | "changeMarkKind"
   | "deleteCase"
+  | "updateCaseContextLines"
   | "patchRelationPropertiesBatch";
 
 type PendingMutation = {

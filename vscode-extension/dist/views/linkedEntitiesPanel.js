@@ -371,6 +371,30 @@ class LinkedEntitiesPanel {
                     }
                     break;
                 }
+                case "updateCaseContextLines": {
+                    const caseId = String(payload.caseId ?? activeCase?.id ?? "");
+                    const beforeRaw = payload.context_before_lines;
+                    const afterRaw = payload.context_after_lines;
+                    const before = typeof beforeRaw === "number" ? beforeRaw : Number.parseInt(String(beforeRaw ?? "10"), 10);
+                    const after = typeof afterRaw === "number" ? afterRaw : Number.parseInt(String(afterRaw ?? "10"), 10);
+                    if (!caseId || !Number.isFinite(before) || !Number.isFinite(after)) {
+                        throw new Error("Invalid updateCaseContextLines payload");
+                    }
+                    const normalizedBefore = Math.max(0, Math.trunc(before));
+                    const normalizedAfter = Math.max(0, Math.trunc(after));
+                    await client.updateCase(caseId, {
+                        context_before_lines: normalizedBefore,
+                        context_after_lines: normalizedAfter,
+                    });
+                    if (activeCase?.id === caseId) {
+                        (0, activeCase_1.setActiveCase)({
+                            ...activeCase,
+                            contextBeforeLines: normalizedBefore,
+                            contextAfterLines: normalizedAfter,
+                        });
+                    }
+                    break;
+                }
                 default:
                     throw new Error(`Unknown mutation action: ${action}`);
             }
@@ -437,15 +461,20 @@ class LinkedEntitiesPanel {
             const assets = asAssets(await client.listAssets(resolved.assessmentId));
             const projectBasePaths = assetLocatorBasePaths(assets, legacyProjectBasePaths);
             const graph = await this.loadGraphData(client);
-            const cases = (graph.graphData?.rows ?? [])
-                .map((row) => row)
-                .filter((row) => Boolean(row.id && row.title))
+            const rawCases = await client.listCases();
+            const caseRows = Array.isArray(rawCases)
+                ? rawCases
+                : [];
+            const cases = caseRows
                 .map((row) => ({
-                id: row.id,
-                title: row.title,
-                status: row.status,
-                asset_id: row.asset_id ?? null,
-            }));
+                id: String(row.id ?? ""),
+                title: String(row.title ?? ""),
+                status: typeof row.status === "string" ? row.status : undefined,
+                asset_id: typeof row.asset_id === "string" ? row.asset_id : null,
+                context_before_lines: typeof row.context_before_lines === "number" ? row.context_before_lines : null,
+                context_after_lines: typeof row.context_after_lines === "number" ? row.context_after_lines : null,
+            }))
+                .filter((row) => Boolean(row.id && row.title));
             const activeCase = (0, activeCase_1.getActiveCase)();
             const scopedActiveCase = activeCase?.id
                 && activeCase.assessmentId === resolved.assessmentId
@@ -456,6 +485,7 @@ class LinkedEntitiesPanel {
                 (0, activeCase_1.setActiveCase)(null);
             }
             const nextCaseId = scopedActiveCase?.id ?? null;
+            const selectedCaseRow = nextCaseId ? cases.find((row) => row.id === nextCaseId) : undefined;
             // Подсветка узлов в Linked Entities привязана к hover в редакторе, а не к selection.
             // При refresh/смене кейса не выставляем locator — иначе после создания mark выделение в редакторе
             // совпадало бы с новым mark и панель оставляла бы на нём рамку.
@@ -467,7 +497,9 @@ class LinkedEntitiesPanel {
                 assetId: resolved.assetId,
                 caseId: nextCaseId,
                 caseTitle: scopedActiveCase?.title ?? null,
-                caseStatus: cases.find((row) => row.id === scopedActiveCase?.id)?.status ?? null,
+                caseStatus: selectedCaseRow?.status ?? null,
+                caseContextBeforeLines: selectedCaseRow?.context_before_lines ?? null,
+                caseContextAfterLines: selectedCaseRow?.context_after_lines ?? null,
                 cases,
                 graphData: graph.graphData,
                 projectBasePaths,

@@ -270,6 +270,8 @@ class SqlStore:
                 "status": record.status,
                 "severity_hint": record.severity_hint,
                 "confidence": record.confidence,
+                "context_before_lines": getattr(record, "context_before_lines", 10),
+                "context_after_lines": getattr(record, "context_after_lines", 10),
                 "created_at": record.created_at,
                 "updated_at": record.updated_at,
             }

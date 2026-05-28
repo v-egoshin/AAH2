@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { requestHostMutation } from "./hostApi";
 import { vscode } from "./vscode";
 
@@ -6,6 +6,8 @@ type CasePickerProps = {
   selectedId: string | null;
   selectedStatus?: string | null;
   caseScopedDecorations: boolean;
+  contextBeforeLines?: number | null;
+  contextAfterLines?: number | null;
 };
 
 const CASE_STATUSES = [
@@ -15,8 +17,27 @@ const CASE_STATUSES = [
   { label: "Failed", value: "FAILED" },
 ];
 
-export function CasePicker({ selectedId, selectedStatus, caseScopedDecorations }: CasePickerProps) {
+export function CasePicker({
+  selectedId,
+  selectedStatus,
+  caseScopedDecorations,
+  contextBeforeLines,
+  contextAfterLines,
+}: CasePickerProps) {
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const effectiveBefore = typeof selectedId === "string" && selectedId
+    ? (typeof contextBeforeLines === "number" ? contextBeforeLines : 10)
+    : 10;
+  const effectiveAfter = typeof selectedId === "string" && selectedId
+    ? (typeof contextAfterLines === "number" ? contextAfterLines : 10)
+    : 10;
+  const [beforeDraft, setBeforeDraft] = useState(String(effectiveBefore));
+  const [afterDraft, setAfterDraft] = useState(String(effectiveAfter));
+  useEffect(() => {
+    setBeforeDraft(String(effectiveBefore));
+    setAfterDraft(String(effectiveAfter));
+  }, [effectiveBefore, effectiveAfter, selectedId]);
+
   const deleteSelectedCase = async () => {
     if (!selectedId || !window.confirm("Delete this case and its Linked Entities relations?")) {
       return;
@@ -24,6 +45,19 @@ export function CasePicker({ selectedId, selectedStatus, caseScopedDecorations }
     try {
       await requestHostMutation("deleteCase", { caseId: selectedId });
       setSettingsOpen(false);
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : String(error));
+    }
+  };
+
+  const saveContextLines = async () => {
+    if (!selectedId) {
+      return;
+    }
+    const before = Math.max(0, Number.parseInt(beforeDraft || "0", 10) || 0);
+    const after = Math.max(0, Number.parseInt(afterDraft || "0", 10) || 0);
+    try {
+      await requestHostMutation("updateCaseContextLines", { caseId: selectedId, context_before_lines: before, context_after_lines: after });
     } catch (error) {
       window.alert(error instanceof Error ? error.message : String(error));
     }
@@ -73,6 +107,46 @@ export function CasePicker({ selectedId, selectedStatus, caseScopedDecorations }
           </label>
           <div className="case-settings-description">
             Show editor decorations only for the selected case.
+          </div>
+          <div className="case-settings-title" style={{ marginTop: 10 }}>Context</div>
+          <div className="case-settings-description">
+            Lines sent to the server around the current editor position (before / after).
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 6 }}>
+            <label style={{ display: "grid", gap: 4 }}>
+              <span className="label">Before</span>
+              <input
+                type="number"
+                min={0}
+                step={1}
+                inputMode="numeric"
+                disabled={!selectedId}
+                value={beforeDraft}
+                onChange={(e) => setBeforeDraft(e.target.value)}
+              />
+            </label>
+            <label style={{ display: "grid", gap: 4 }}>
+              <span className="label">After</span>
+              <input
+                type="number"
+                min={0}
+                step={1}
+                inputMode="numeric"
+                disabled={!selectedId}
+                value={afterDraft}
+                onChange={(e) => setAfterDraft(e.target.value)}
+              />
+            </label>
+          </div>
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: 6, marginTop: 8 }}>
+            <button
+              className="case-settings-delete"
+              type="button"
+              disabled={!selectedId}
+              onClick={() => void saveContextLines()}
+            >
+              Save context
+            </button>
           </div>
           <div className="case-settings-danger">
             <button

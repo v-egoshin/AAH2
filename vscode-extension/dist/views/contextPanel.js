@@ -201,7 +201,18 @@ class ContextPanel {
             case "selectActiveCase": {
                 const entity = typeof message.id === "string" ? this.findEntity(message.id) : null;
                 if (entity) {
-                    (0, activeCase_1.setActiveCase)({ id: entity.id, title: entityLabel(entity) });
+                    const candidate = entity;
+                    const before = typeof candidate.context_before_lines === "number" ? candidate.context_before_lines : undefined;
+                    const after = typeof candidate.context_after_lines === "number" ? candidate.context_after_lines : undefined;
+                    const state = (0, assessmentState_1.readState)();
+                    (0, activeCase_1.setActiveCase)({
+                        id: entity.id,
+                        title: entityLabel(entity),
+                        assessmentId: state.assessmentId,
+                        assetId: state.assetId,
+                        contextBeforeLines: before,
+                        contextAfterLines: after,
+                    });
                     this.pushState();
                     await vscode.commands.executeCommand("appsecWorkbench.refreshContext");
                 }

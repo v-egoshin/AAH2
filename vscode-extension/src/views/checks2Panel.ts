@@ -174,11 +174,16 @@ export class Checks2Panel implements vscode.WebviewViewProvider {
             if (typeof message.assetId === "string" && message.assetId && message.assetId !== resolved.assetId) {
               await updateAssessmentState({ assetId: message.assetId });
             }
+            const candidate = (message.payload ?? {}) as Record<string, unknown>;
+            const before = typeof candidate.context_before_lines === "number" ? candidate.context_before_lines : undefined;
+            const after = typeof candidate.context_after_lines === "number" ? candidate.context_after_lines : undefined;
             setActiveCase({
               id: message.id,
               title: String(message.payload?.title ?? "Case"),
               assessmentId: resolved.assessmentId,
               assetId: typeof message.assetId === "string" ? message.assetId : resolved.assetId,
+              contextBeforeLines: before,
+              contextAfterLines: after,
             });
             await vscode.commands.executeCommand("appsecWorkbench.refreshLinkedEntities");
             await vscode.commands.executeCommand("appsecLinkedEntities.focus");

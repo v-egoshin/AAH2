@@ -131,6 +131,8 @@ class CaseORM(Base):
     status: Mapped[str] = mapped_column(String(32), default="OPEN")
     severity_hint: Mapped[str | None] = mapped_column(String(32), nullable=True)
     confidence: Mapped[str] = mapped_column(String(32), default="MEDIUM")
+    context_before_lines: Mapped[int] = mapped_column(Integer, default=10)
+    context_after_lines: Mapped[int] = mapped_column(Integer, default=10)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 

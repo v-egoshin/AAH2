@@ -5,7 +5,7 @@ import { ReviewEntity, WorkbenchApiClient } from "./api/client";
 import { getMarkKindCatalogSnapshot, refreshMarkKindCatalogFromApi } from "./state/markKindCatalog";
 import { log, showLogs } from "./log";
 import { configureAssessmentStateStorage, readState } from "./state/assessmentState";
-import { configureActiveCaseStorage } from "./state/activeCase";
+import { configureActiveCaseStorage, getActiveCase } from "./state/activeCase";
 import { RecentMarksPanel } from "./state/recentMarks";
 import { Checks2Panel } from "./views/checks2Panel";
 import { ContextPanel } from "./views/contextPanel";
@@ -83,6 +83,11 @@ export function activate(context: vscode.ExtensionContext) {
     }
     const file = relativeFilePathFromUri(editor.document.uri);
     const line = editor.selection.active.line + 1;
+    const activeCase = getActiveCase();
+    const before = Math.max(0, Number(activeCase?.contextBeforeLines ?? 10) || 0);
+    const after = Math.max(0, Number(activeCase?.contextAfterLines ?? 10) || 0);
+    const startLine = Math.max(1, line - before);
+    const endLine = line + after;
     const refreshKey = `${file}:${line}`;
     if (!force && (refreshKey === inFlightRefreshKey || refreshKey === lastAppliedRefreshKey)) {
       log(`Refresh skipped: duplicate ${refreshKey}`);
@@ -94,7 +99,7 @@ export function activate(context: vscode.ExtensionContext) {
     const api = new WorkbenchApiClient(state);
     log(`Refresh review context for ${refreshKey}`);
     try {
-      const payload = await api.getReviewContext(file, line);
+      const payload = await api.getReviewContext(file, startLine, endLine);
       if (seq !== refreshSequence) {
         log(`Refresh ignored: stale response for ${refreshKey}`);
         return;

@@ -9,6 +9,8 @@ export type EmbedCaseOption = {
   title: string;
   status?: string;
   asset_id?: string | null;
+  context_before_lines?: number | null;
+  context_after_lines?: number | null;
 };
 
 export type EmbedWorkbenchConfig = {
@@ -19,6 +21,8 @@ export type EmbedWorkbenchConfig = {
   caseId: string | null;
   caseTitle?: string | null;
   caseStatus?: string | null;
+  caseContextBeforeLines?: number | null;
+  caseContextAfterLines?: number | null;
   cases?: EmbedCaseOption[];
   caseScopedDecorations?: boolean;
   activeLocator?: { file: string; startLine: number; endLine: number } | null;

@@ -12,6 +12,8 @@ class CaseCreate(BaseModel):
     description: str = ""
     severity_hint: str | None = None
     confidence: str = "MEDIUM"
+    context_before_lines: int = 10
+    context_after_lines: int = 10
 
 
 class CaseRead(BaseModel):
@@ -23,6 +25,8 @@ class CaseRead(BaseModel):
     status: str = "OPEN"
     severity_hint: str | None = None
     confidence: str = "MEDIUM"
+    context_before_lines: int = 10
+    context_after_lines: int = 10
     created_at: datetime = Field(default_factory=utcnow)
     updated_at: datetime = Field(default_factory=utcnow)
 
@@ -34,6 +38,8 @@ class CaseUpdate(BaseModel):
     status: str | None = None
     severity_hint: str | None = None
     confidence: str | None = None
+    context_before_lines: int | None = None
+    context_after_lines: int | None = None
 
 
 class FindingCreate(BaseModel):

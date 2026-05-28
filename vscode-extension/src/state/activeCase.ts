@@ -5,6 +5,8 @@ export type ActiveCaseState = {
   title: string;
   assessmentId?: string;
   assetId?: string;
+  contextBeforeLines?: number;
+  contextAfterLines?: number;
 };
 
 const ACTIVE_CASE_STORAGE_KEY = "appsecWorkbench.activeCase";

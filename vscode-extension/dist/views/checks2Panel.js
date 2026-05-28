@@ -154,11 +154,16 @@ class Checks2Panel {
                         if (typeof message.assetId === "string" && message.assetId && message.assetId !== resolved.assetId) {
                             await (0, assessmentState_1.updateAssessmentState)({ assetId: message.assetId });
                         }
+                        const candidate = (message.payload ?? {});
+                        const before = typeof candidate.context_before_lines === "number" ? candidate.context_before_lines : undefined;
+                        const after = typeof candidate.context_after_lines === "number" ? candidate.context_after_lines : undefined;
                         (0, activeCase_1.setActiveCase)({
                             id: message.id,
                             title: String(message.payload?.title ?? "Case"),
                             assessmentId: resolved.assessmentId,
                             assetId: typeof message.assetId === "string" ? message.assetId : resolved.assetId,
+                            contextBeforeLines: before,
+                            contextAfterLines: after,
                         });
                         await vscode.commands.executeCommand("appsecWorkbench.refreshLinkedEntities");
                         await vscode.commands.executeCommand("appsecLinkedEntities.focus");

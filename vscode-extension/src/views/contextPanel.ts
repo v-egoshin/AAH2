@@ -173,7 +173,18 @@ export class ContextPanel implements vscode.WebviewViewProvider {
       case "selectActiveCase": {
         const entity = typeof message.id === "string" ? this.findEntity(message.id) : null;
         if (entity) {
-          setActiveCase({ id: entity.id, title: entityLabel(entity) });
+          const candidate = entity as unknown as Record<string, unknown>;
+          const before = typeof candidate.context_before_lines === "number" ? candidate.context_before_lines : undefined;
+          const after = typeof candidate.context_after_lines === "number" ? candidate.context_after_lines : undefined;
+          const state = readState();
+          setActiveCase({
+            id: entity.id,
+            title: entityLabel(entity),
+            assessmentId: state.assessmentId,
+            assetId: state.assetId,
+            contextBeforeLines: before,
+            contextAfterLines: after,
+          });
           this.pushState();
           await vscode.commands.executeCommand("appsecWorkbench.refreshContext");
         }

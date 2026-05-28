@@ -112,6 +112,11 @@ function activate(context) {
         }
         const file = (0, assetPath_1.relativeFilePathFromUri)(editor.document.uri);
         const line = editor.selection.active.line + 1;
+        const activeCase = (0, activeCase_1.getActiveCase)();
+        const before = Math.max(0, Number(activeCase?.contextBeforeLines ?? 10) || 0);
+        const after = Math.max(0, Number(activeCase?.contextAfterLines ?? 10) || 0);
+        const startLine = Math.max(1, line - before);
+        const endLine = line + after;
         const refreshKey = `${file}:${line}`;
         if (!force && (refreshKey === inFlightRefreshKey || refreshKey === lastAppliedRefreshKey)) {
             (0, log_1.log)(`Refresh skipped: duplicate ${refreshKey}`);
@@ -122,7 +127,7 @@ function activate(context) {
         const api = new client_1.WorkbenchApiClient(state);
         (0, log_1.log)(`Refresh review context for ${refreshKey}`);
         try {
-            const payload = await api.getReviewContext(file, line);
+            const payload = await api.getReviewContext(file, startLine, endLine);
             if (seq !== refreshSequence) {
                 (0, log_1.log)(`Refresh ignored: stale response for ${refreshKey}`);
                 return;

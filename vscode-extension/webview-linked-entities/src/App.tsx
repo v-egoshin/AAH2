@@ -15,6 +15,8 @@ const emptyConfig: EmbedWorkbenchConfig = {
   caseId: null,
   caseTitle: null,
   caseStatus: null,
+  caseContextBeforeLines: null,
+  caseContextAfterLines: null,
   caseScopedDecorations: false,
   activeLocator: null,
   projectBasePaths: {},
@@ -82,6 +84,8 @@ export function App() {
           selectedId={config.caseId}
           selectedStatus={config.caseStatus ?? null}
           caseScopedDecorations={Boolean(config.caseScopedDecorations)}
+          contextBeforeLines={config.caseContextBeforeLines}
+          contextAfterLines={config.caseContextAfterLines}
         />
         {config.graphError ? (
           <p className="case-picker-graph-error error-text">{config.graphError}</p>

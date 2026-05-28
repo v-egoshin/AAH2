@@ -181,12 +181,18 @@ class WorkbenchApiClient {
             headers: this.headers(),
         });
     }
-    async getReviewContext(file, line) {
+    async getReviewContext(file, startLine, endLine) {
         const resolved = await this.getResolvedConfig();
         return this.request(`/assessments/${resolved.assessmentId}/review-context`, {
             method: "POST",
             headers: this.headers(),
-            body: JSON.stringify({ asset_id: resolved.assetId || undefined, file, start_line: line, end_line: line, include_nearby: true }),
+            body: JSON.stringify({
+                asset_id: resolved.assetId || undefined,
+                file,
+                start_line: startLine,
+                end_line: endLine,
+                include_nearby: true,
+            }),
         });
     }
     async getMarkKindCatalog(assessmentId) {
